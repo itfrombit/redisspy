@@ -8,7 +8,7 @@ Options:
 	-p : specify a port. Default is 6379.
 
 	-k : specify a key pattern. Default is '*' (all keys)
-	-a : auto-refresh every <interval> seconds
+	-a : auto-refresh every <interval> seconds. Default is manual refresh.
 
 
 Commands:
