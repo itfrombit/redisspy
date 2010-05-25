@@ -1,6 +1,18 @@
-Spy on your redis databases.
+Spy on a redis database.
+
+redisspy [-h <host>] [-p <port>] [-a <interval>] [-k pattern]
+
+Options:
+
+	-h : specify a host. Default is localhost.
+	-p : specify a port. Default is 6379.
+
+	-k : specify a key pattern. Default is '*' (all keys)
+	-a : auto-refresh every <interval> seconds
+
 
 Commands:
+
 	f : move forward a page (can also use spacebar)
 	b : move back a page
 
