@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "anet.h"
 #include "sds.h"
@@ -21,10 +22,6 @@ int redisRefresh(char* pattern)
 		printf("Connection error: %s\n", r->reply);
 		exit(1);
 	}
-
-	r = redisCommand(fd, "PING");
-	printf("PING: %s\n", r->reply);
-	freeReplyObject(r);
 
 	r = redisCommand(fd, "KEYS %s", pattern);
 	if (r->type == REDIS_REPLY_ARRAY)

@@ -17,14 +17,34 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <getopt.h>
+#include <sys/time.h>
 
 #include <curses.h>
 #include "hiredis.h"
 
-#define REDIS_MAX_HOST_LEN	128
-#define REDIS_MAX_TYPE_LEN	8
-#define REDIS_MAX_KEY_LEN	64
-#define REDIS_MAX_VALUE_LEN	2048
+
+// UNUSED macro via Martin Pool
+#ifdef UNUSED 
+#elif defined(__GNUC__) 
+# define UNUSED(x) UNUSED_ ## x __attribute__((unused)) 
+#elif defined(__LCLINT__) 
+# define UNUSED(x) /*@unused@*/ x 
+#else 
+# define UNUSED(x) x 
+#endif
+
+
+#define REDIS_MAX_HOST_LEN		128
+#define REDIS_MAX_TYPE_LEN		8
+#define REDIS_MAX_KEY_LEN		64
+#define REDIS_MAX_PATTERN_LEN	REDIS_MAX_KEY_LEN
+#define REDIS_MAX_VALUE_LEN		2048
+
+
+static const char*				defaultHost = "127.0.0.1";
+static const int				defaultPort = 6379;
+static const char*				defaultPattern = "*";
 
 typedef struct
 {
@@ -34,6 +54,11 @@ typedef struct
 	char	value[REDIS_MAX_VALUE_LEN];
 } REDISDATA;
 
+typedef struct
+{
+	REDISDATA*	data;
+
+} REDIS;
 
 // Curses data
 #define MAXROWS	1000
@@ -48,19 +73,26 @@ static REDISDATA*	redisData;
 static unsigned int	redisRows;
 
 static unsigned int	currentRow = 0;
-static unsigned int	currentCol = 0;
+//static unsigned int	currentCol = 0;
 static unsigned int	startIndex = 0;
 
 static char			host[REDIS_MAX_HOST_LEN];
 static unsigned int	port;
 
-static const int sortByKey		= 1;
-static const int sortByType		= 2;
-static const int sortByLength	= 3;
-static const int sortByValue	= 4;
+#define sortByKey		1
+#define sortByType		2
+#define sortByLength	3
+#define sortByValue		4
 
-static int sortBy;
-static int sortReverse;
+static char			pattern[REDIS_MAX_PATTERN_LEN];
+
+static int			infoConnectedClients;
+static char			infoUsedMemoryHuman[32];
+
+static int			sortBy;
+static int			sortReverse;
+
+static int			refreshInterval;
 
 // Sort functions
 
@@ -93,7 +125,7 @@ int compareTypes(const void* a, const void* b)
 	return r;
 }
 
-int compareLength(const void* a, const void* b)
+int compareLengths(const void* a, const void* b)
 {
 	SWAPIFREVERSESORT(a, b);
 
@@ -122,6 +154,7 @@ void redisplay()
 {
 	unsigned int i = 0;
 	unsigned int redisIndex = startIndex;
+	char status[MAXCOLS];
 
 	getmaxyx(screen, screenRows, screenCols);
 	clear();
@@ -129,39 +162,41 @@ void redisplay()
 	displayRows = screenRows - 3; // Title, Status, Command
 
 	attron(A_STANDOUT);
-	//attron(A_BOLD);
-	//attron(A_REVERSE);
-	//attron(A_UNDERLINE);
-	mvaddstr(0, 0, 
-	  "Key                   Type    Length  Value                                   ");
+
+	strcpy(status, "Key                   Type    Length  Value");
+	for (i = strlen(status) - 1; i < screenCols - 1; i++)
+		status[i+1] = ' ';
+	status[screenCols] = '\0';
+
+	mvaddstr(0, 0, status);
 
 	attroff(A_STANDOUT);
 	//attroff(A_BOLD);
 	//attroff(A_REVERSE);
 	//attroff(A_UNDERLINE);
 
+	i = 0;
 	while ((i < displayRows) && (redisIndex < redisRows))
 	{
 		char line[MAXCOLS];
-		sprintf(line, "%-20s  %-6s  %6d  %-40s",
+		sprintf(line, "%-20s  %-6s  %6d  ",
 				redisData[redisIndex].key,
 				redisData[redisIndex].type,
-				redisData[redisIndex].length,
-				redisData[redisIndex].value);
+				redisData[redisIndex].length);
+		strncat(line, redisData[redisIndex].value, screenCols - 38);
 
 		mvaddstr(i+1, 0, line); // skip the header row
 		++i;
 		++redisIndex;
 	}
 
-	char status[MAXCOLS];
 	sprintf(status, "[host=%s:%d] [keys=%d] [%d%%] [clients=%d] [mem=%s]", 
 			host, 
 			port, 
 			redisRows, 
-			redisIndex*100/redisRows,
-			5, 
-			"1.5MB");
+			redisRows ? redisIndex*100/redisRows : 0,
+			infoConnectedClients, 
+			infoUsedMemoryHuman);
 
 	for (i = strlen(status) - 1; i < screenCols - 1; i++)
 		status[i+1] = ' ';
@@ -254,6 +289,36 @@ int redisRefresh(char* pattern)
 	{
 		return -1;
 	}
+
+	infoConnectedClients = 0;
+	strcpy(infoUsedMemoryHuman, "");
+
+	r = redisCommand(fd, "INFO");
+	if (r->type == REDIS_REPLY_STRING)
+	{
+		char*	c = strstr(r->reply, "connected_clients");
+		char*	m = strstr(r->reply, "used_memory_human");
+		char*	t = NULL;
+
+		if (c)
+		{
+			t = strtok(c, ":\r\n");
+			t = strtok(NULL, ":\r\n");
+
+			if (t)
+				infoConnectedClients = atoi(t);
+		}
+
+		if (m)
+		{
+			t = strtok(m, ":\r\n");
+			t = strtok(NULL, ":\r\n");
+
+			if (t)
+				strcpy(infoUsedMemoryHuman, t);
+		}
+	}
+
 
 	r = redisCommand(fd, "KEYS %s", pattern);
 	if (r->type == REDIS_REPLY_ARRAY)
@@ -366,27 +431,127 @@ int redisRefresh(char* pattern)
 		}
 	}
 
+	close(fd);
+
 	return 0;
 }
 
+void redisSort()
+{
+	switch (sortBy)
+	{
+		case sortByKey:
+			qsort(redisData, redisRows, sizeof(REDISDATA), compareKeys);
+			break;
+
+		case sortByType:
+			qsort(redisData, redisRows, sizeof(REDISDATA), compareTypes);
+			break;
+
+		case sortByLength:
+			qsort(redisData, redisRows, sizeof(REDISDATA), compareLengths);
+			break;
+
+		case sortByValue:
+			qsort(redisData, redisRows, sizeof(REDISDATA), compareValues);
+			break;
+	}
+}
 
 // Driver
+
+void setTimerInterval(struct itimerval* timer)
+{
+	timer->it_interval.tv_sec = 0;
+	timer->it_interval.tv_usec = 0;
+	timer->it_value.tv_sec = refreshInterval;
+	timer->it_value.tv_usec = 0;
+}
+
+
+void timerExpired(int UNUSED(i))
+{
+	redisRefresh(pattern);
+	redisSort();
+
+	redisplay();
+
+	struct itimerval timer;
+	signal(SIGALRM, timerExpired);
+
+	setTimerInterval(&timer);
+	setitimer(ITIMER_REAL, &timer, 0);
+}
+
+
+void usage()
+{
+	printf("usage: redisspy [-h <host>] [-p <port>] [-k <pattern>] [-a <interval>]\n");
+	printf("\n");
+	printf("    -h : Specify host. Default is localhost.\n");
+	printf("    -p : Specify port. Default is 6379.\n");
+	printf("    -k : Specify key pattern. Default is '*' (all keys).\n");
+	printf("    -a : Refresh every <interval> seconds. Default is manual refresh.\n");
+	printf("\n");
+}
+
 int main(int argc, char* argv[])
 {
-	int done = 0;
+	strcpy(host, defaultHost);
+	port = defaultPort;
+	strcpy(pattern, defaultPattern);
+	refreshInterval = 0;
 
-	strcpy(host, "127.0.0.1");
-	port = 6379;
+	int c; 
+	while ((c = getopt(argc, argv, "h:p:a:k:?")) != -1)
+	{
+		switch (c)
+		{
+			case 'h':
+				strcpy(host, optarg);
+				break;
+
+			case 'p':
+				port = atoi(optarg);
+				break;
+
+			case 'k':
+				strcpy(pattern, optarg);
+				break;
+
+			case 'a':
+				refreshInterval = atoi(optarg);
+				break;
+
+			case '?':
+			default:
+				usage();
+				exit(1);
+				break;
+		}
+	}
+
+	argc -= optind;
+	argv += optind;
+
+	int done = 0;
 
 	initCurses();
 
-	redisRefresh("*");
-
 	sortBy = sortByKey;
 	sortReverse = 0;
-	qsort(redisData, redisRows, sizeof(REDISDATA), compareKeys);
 
-	redisplay();
+	if (refreshInterval)
+	{
+		timerExpired(0);
+	}
+	else
+	{
+		redisRefresh(pattern);
+		redisSort();
+
+		redisplay();
+	}
 
 	while (!done)
 	{
@@ -409,52 +574,65 @@ int main(int argc, char* argv[])
 				break;
 
 			case 'r':
-				redisRefresh("*");
+				redisRefresh(pattern);
+				redisSort();
+
 				redisplay();
 				break;
 
 			case 'k':
 				if (sortBy == sortByKey)
+				{
 					sortReverse = ~sortReverse;
+				}
 				else
 				{
 					sortBy = sortByKey;
 					sortReverse = 0;
 				}
-				
-				qsort(redisData, redisRows, sizeof(REDISDATA), compareKeys);
+
+				redisSort();
+
 				redisplay();
 				break;
 
 			case 't':
 				if (sortBy == sortByType)
+				{
 					sortReverse = ~sortReverse;
+				}
 				else
 				{
 					sortBy = sortByType;
 					sortReverse = 0;
 				}
 
-				qsort(redisData, redisRows, sizeof(REDISDATA), compareTypes);
+				redisSort();
+
 				redisplay();
 				break;
 
 			case 'l':
 				if (sortBy == sortByLength)
+				{
 					sortReverse = ~sortReverse;
+				}
 				else
 				{
 					sortBy = sortByLength;
 					sortReverse = 0;
 				}
 
-				qsort(redisData, redisRows, sizeof(REDISDATA), compareLength);
+				redisSort();
+
 				redisplay();
 				break;
 
 			case 'v':
 				if (sortBy == sortByValue)
+				{
 					sortReverse = ~sortReverse;
+				}
 				else
 				{
 					sortBy = sortByValue;
