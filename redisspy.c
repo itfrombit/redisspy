@@ -73,6 +73,7 @@ static unsigned int displayRows;
 
 static REDISDATA*	redisData;
 static unsigned int	redisRows;
+static int			deadServer;
 
 static unsigned int	currentRow = 0;
 //static unsigned int	currentCol = 0;
@@ -196,13 +197,22 @@ void redisplay()
 		++redisIndex;
 	}
 
-	sprintf(status, "[host=%s:%d] [keys=%d] [%d%%] [clients=%d] [mem=%s]", 
+	if (deadServer)
+	{
+		sprintf(status, "[host=%s:%d] No Connection.", 
+			host, 
+			port); 
+	}
+	else
+	{
+		sprintf(status, "[host=%s:%d] [keys=%d] [%d%%] [clients=%d] [mem=%s]", 
 			host, 
 			port, 
 			redisRows, 
 			redisRows ? redisIndex*100/redisRows : 0,
 			infoConnectedClients, 
 			infoUsedMemoryHuman);
+	}
 
 	for (i = strlen(status) - 1; i < screenCols - 1; i++)
 		status[i+1] = ' ';
@@ -293,9 +303,13 @@ int redisRefresh(char* pattern)
 	r = redisConnect(&fd, host, port);
 	if (r != NULL)
 	{
+		deadServer = 1;
 		return -1;
 	}
 
+	deadServer = 0;
+
+	// Put a busy signal on the status line
 	attron(A_STANDOUT);
 	mvaddstr(screenRows - 2, screenCols - 1, "*");
 	attroff(A_STANDOUT);
