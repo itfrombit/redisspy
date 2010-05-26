@@ -19,8 +19,9 @@
 #include <string.h>
 #include <getopt.h>
 #include <sys/time.h>
+#include <ctype.h>
 
-#include <curses.h>
+#include <ncurses.h>
 #include "hiredis.h"
 
 
@@ -40,6 +41,7 @@
 #define REDIS_MAX_KEY_LEN		64
 #define REDIS_MAX_PATTERN_LEN	REDIS_MAX_KEY_LEN
 #define REDIS_MAX_VALUE_LEN		2048
+#define REDIS_MAX_COMMAND_LEN	256
 
 
 static const char*				defaultHost = "127.0.0.1";
@@ -515,18 +517,25 @@ void usage()
 }
 
 
-int getPattern()
+int getCommand(char* prompt, char* str, int max)
 {
-	char	newPattern[REDIS_MAX_PATTERN_LEN];
+	char	command[REDIS_MAX_COMMAND_LEN];
 
 	int		done = 0;
 	int		cancelled = 0;
 
-	mvaddstr(screenRows - 1, 0, "Pattern: ");
+	memset(command, 0, REDIS_MAX_COMMAND_LEN);
+
+	mvaddstr(screenRows - 1, 0, prompt);
+
 	refresh();
 
 	int row = screenRows - 1;
-	int col = 9;
+	int startCol = strlen(prompt);
+
+	int col = startCol;
+	int idx = 0;
+
 	move(row, col);
 
 	while (!done && !cancelled)
@@ -535,28 +544,54 @@ int getPattern()
 
 		switch (c)
 		{
-			case 27: //ESCAPE:
+			case 27: // Escape
 				cancelled = 1;
-
-				return -1;
+				beep();
 				break;
 
-			case KEY_BACKSPACE:
-				delch();
-				col--;
-				move(row, col);
+			case 127: // Delete
+				if (idx > 0)
+				{
+					col--;
+					idx--;
+					command[idx] = 0;
+					move(row, col);
+					delch();
+				}
+				break;
+
+			case 10:
+			case 13:
+				strncpy(str, command, max - 1);
+				done = 1;
 				break;
 
 			default:
-				col++;
-				insch(c);
-				move(row, col);
-				refresh();
+				if (isprint(c))
+				{
+					insch(c);
+
+					col++;
+					command[idx++] = c;
+
+					move(row, col);
+					refresh();
+				}
+				else
+				{
+					beep();
+				}
 				break;
 		}
 	}
 
+	// Restore the command line
+	//noecho();
 
+	for (unsigned int i = 0; i < screenCols - 1; i++)
+		mvaddstr(row, i, " ");
+
+	return 0;
 }
 
 
@@ -631,7 +666,7 @@ int main(int argc, char* argv[])
 				break;
 
 			case 'p':
-				if (getPattern())
+				if (getCommand("Pattern: ", pattern, sizeof(pattern)) == 0)
 				{
 					redisRefresh(pattern);
 					redisSort(0);
