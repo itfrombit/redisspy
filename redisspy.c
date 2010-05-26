@@ -106,6 +106,10 @@ static int			refreshInterval;
 		x = tmp; \
 	} 
 
+
+#define safestrcat(d, s) \
+	strncat(d, s, sizeof(d) - strlen(s) - 1);
+
 int compareKeys(const void* a, const void* b)
 {
 	SWAPIFREVERSESORT(a, b);
@@ -271,7 +275,7 @@ void help()
 	char line[MAXCOLS];
 	strcpy(line, "r=refresh f,b=page k,t,l,v=sort q=quit");
 	for (unsigned int i = strlen(line); i < screenCols; i++)
-		strcat(line, " ");
+		safestrcat(line, " ");
 
 	attron(A_STANDOUT);
 	mvaddstr(screenRows - 1, 0, line);
@@ -289,6 +293,11 @@ int redisRefresh(char* pattern)
 	{
 		return -1;
 	}
+
+	attron(A_STANDOUT);
+	mvaddstr(screenRows - 2, screenCols - 1, "*");
+	attroff(A_STANDOUT);
+	refresh();
 
 	infoConnectedClients = 0;
 	strcpy(infoUsedMemoryHuman, "");
@@ -347,97 +356,107 @@ int redisRefresh(char* pattern)
 
 			strcpy(redisData[i].type, t->reply);
 
+			redisReply* v = NULL;
+
 			if (strcmp(t->reply, "string") == 0)
 			{
-				redisReply* v = redisCommand(fd, "GET %s", 
-				                             r->element[i]->reply);
+				v = redisCommand(fd, "GET %s", r->element[i]->reply);
 
 				strcpy(redisData[i].value, v->reply);
 				redisData[i].length = strlen(v->reply);
-				freeReplyObject(v);
 			}
 			else if (strcmp(t->reply, "list") == 0)
 			{
-				redisReply* v = redisCommand(fd, "LRANGE %s 0 -1", 
-				                             r->element[i]->reply);
+				v = redisCommand(fd, "LRANGE %s 0 -1", r->element[i]->reply);
 
 				redisData[i].length = v->elements;
 
 				for (unsigned j = 0; j < v->elements; j++)
 				{
 					if (j > 0)
-						strcat(redisData[i].value, " ");
+						safestrcat(redisData[i].value, " ");
 
-					strcat(redisData[i].value, v->element[j]->reply);
+					safestrcat(redisData[i].value, v->element[j]->reply);
 				}
-
-				freeReplyObject(v);
 			}
 			else if (strcmp(t->reply, "hash") == 0)
 			{
-				redisReply* v = redisCommand(fd, "HGETALL %s", r->element[i]->reply);
-				redisData[i].length = v->elements;
+				v = redisCommand(fd, "HGETALL %s", r->element[i]->reply);
+
+				redisData[i].length = v->elements >> 1;
 
 				for (unsigned j = 0; j < v->elements; j+=2)
 				{
 					if (j > 0)
-						strcat(redisData[i].value, " ");
+						safestrcat(redisData[i].value, " ");
 
-					strcat(redisData[i].value, v->element[j]->reply);
-					strcat(redisData[i].value, "->");
+					safestrcat(redisData[i].value, v->element[j]->reply);
+					safestrcat(redisData[i].value, "->");
 					/*
 					if (strcmp(v->element[j+1]->reply, "") == 0)
-						strcat(value, "(nil)");
+						safestrcat(value, "(nil)");
 					else
-						strcat(value, v->element[j+1]->reply);
+						safestrcat(value, v->element[j+1]->reply);
 					*/
-					strcat(redisData[i].value, v->element[j+1]->reply);
+					safestrcat(redisData[i].value, v->element[j+1]->reply);
 				}
-
-				freeReplyObject(v);
 			}
 			else if (strcmp(t->reply, "set") == 0)
 			{
-				redisReply* v = redisCommand(fd, "SMEMBERS %s", r->element[i]->reply);
+				v = redisCommand(fd, "SMEMBERS %s", r->element[i]->reply);
 				redisData[i].length = v->elements;
 
 				for (unsigned j = 0; j < v->elements; j++)
 				{
 					if (j > 0)
-						strcat(redisData[i].value, " ");
+						safestrcat(redisData[i].value, " ");
 
-					strcat(redisData[i].value, v->element[j]->reply);
+					safestrcat(redisData[i].value, v->element[j]->reply);
 				}
-
-				freeReplyObject(v);
 			}
 			else if (strcmp(t->reply, "zset") == 0)
 			{
-				redisReply* v = redisCommand(fd, "ZRANGE %s 0 -1", r->element[i]->reply);
+				v = redisCommand(fd, "ZRANGE %s 0 -1", r->element[i]->reply);
 				redisData[i].length = v->elements;
 
 				for (unsigned j = 0; j < v->elements; j++)
 				{
 					if (j > 0)
-						strcat(redisData[i].value, " ");
+						safestrcat(redisData[i].value, " ");
 
-					strcat(redisData[i].value, v->element[j]->reply);
+					safestrcat(redisData[i].value, v->element[j]->reply);
 				}
-
-				freeReplyObject(v);
 			}
 
+			freeReplyObject(v);
 			freeReplyObject(t);
 		}
 	}
 
 	close(fd);
 
+	attron(A_STANDOUT);
+	mvaddstr(screenRows - 2, screenCols - 1, " ");
+	attroff(A_STANDOUT);
+	refresh();
+
 	return 0;
 }
 
-void redisSort()
+void redisSort(int newSortBy)
 {
+	// 0 means repeat what we did last time
+	if (newSortBy > 0) 
+	{
+		if (sortBy == newSortBy)
+			sortReverse = ~sortReverse;
+		else
+		{
+			sortReverse = 0;
+			sortBy = newSortBy;
+		}
+	}
+
 	switch (sortBy)
 	{
 		case sortByKey:
@@ -472,7 +491,7 @@ void setTimerInterval(struct itimerval* timer)
 void timerExpired(int UNUSED(i))
 {
 	redisRefresh(pattern);
-	redisSort();
+	redisSort(0);
 
 	redisplay();
 
@@ -494,6 +513,53 @@ void usage()
 	printf("    -a : Refresh every <interval> seconds. Default is manual refresh.\n");
 	printf("\n");
 }
+
+
+int getPattern()
+{
+	char	newPattern[REDIS_MAX_PATTERN_LEN];
+
+	int		done = 0;
+	int		cancelled = 0;
+
+	mvaddstr(screenRows - 1, 0, "Pattern: ");
+	refresh();
+
+	int row = screenRows - 1;
+	int col = 9;
+	move(row, col);
+
+	while (!done && !cancelled)
+	{
+		char c = getch();
+
+		switch (c)
+		{
+			case 27: //ESCAPE:
+				cancelled = 1;
+
+				return -1;
+				break;
+
+			case KEY_BACKSPACE:
+				delch();
+				col--;
+				move(row, col);
+				break;
+
+			default:
+				col++;
+				insch(c);
+				move(row, col);
+				refresh();
+				break;
+		}
+	}
+
+
+}
+
+
 
 int main(int argc, char* argv[])
 {
@@ -536,10 +602,11 @@ int main(int argc, char* argv[])
 
 	int done = 0;
 
+	sortReverse = 0;
+	sortBy = sortByKey;
+
 	initCurses();
 
-	sortBy = sortByKey;
-	sortReverse = 0;
 
 	if (refreshInterval)
 	{
@@ -548,7 +615,7 @@ int main(int argc, char* argv[])
 	else
 	{
 		redisRefresh(pattern);
-		redisSort();
+		redisSort(sortByKey);
 
 		redisplay();
 	}
@@ -564,6 +631,12 @@ int main(int argc, char* argv[])
 				break;
 
 			case 'p':
+				if (getPattern())
+				{
+					redisRefresh(pattern);
+					redisSort(0);
+					redisplay();
+				}
 				break;
 
 			case 'a':
@@ -575,71 +648,27 @@ int main(int argc, char* argv[])
 
 			case 'r':
 				redisRefresh(pattern);
-				redisSort();
-
+				redisSort(0);
 				redisplay();
 				break;
 
 			case 'k':
-				if (sortBy == sortByKey)
-				{
-					sortReverse = ~sortReverse;
-				}
-				else
-				{
-					sortBy = sortByKey;
-					sortReverse = 0;
-				}
-
-				redisSort();
-
+				redisSort(sortByKey);
 				redisplay();
 				break;
 
 			case 't':
-				if (sortBy == sortByType)
-				{
-					sortReverse = ~sortReverse;
-				}
-				else
-				{
-					sortBy = sortByType;
-					sortReverse = 0;
-				}
-
-				redisSort();
-
+				redisSort(sortByType);
 				redisplay();
 				break;
 
 			case 'l':
-				if (sortBy == sortByLength)
-				{
-					sortReverse = ~sortReverse;
-				}
-				else
-				{
-					sortBy = sortByLength;
-					sortReverse = 0;
-				}
-
-				redisSort();
-
+				redisSort(sortByLength);
 				redisplay();
 				break;
 
 			case 'v':
-				if (sortBy == sortByValue)
-				{
-					sortReverse = ~sortReverse;
-				}
-				else
-				{
-					sortBy = sortByValue;
-					sortReverse = 0;
-				}
-
-				qsort(redisData, redisRows, sizeof(REDISDATA), compareValues);
+				redisSort(sortByValue);
 				redisplay();
 				break;
 
