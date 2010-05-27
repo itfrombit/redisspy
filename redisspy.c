@@ -22,6 +22,8 @@
 #include <ctype.h>
 
 #include <ncurses.h>
+#include <signal.h>
+
 #include "hiredis.h"
 
 
@@ -97,9 +99,8 @@ static int			sortReverse;
 
 static int			refreshInterval;
 
+
 // Sort functions
-
-
 #define SWAPIFREVERSESORT(x, y) \
 	const void* tmp; \
 	if (sortReverse) \
@@ -495,15 +496,6 @@ void redisSort(int newSortBy)
 
 // Driver
 
-void setTimerInterval(struct itimerval* timer)
-{
-	timer->it_interval.tv_sec = 0;
-	timer->it_interval.tv_usec = 0;
-	timer->it_value.tv_sec = refreshInterval;
-	timer->it_value.tv_usec = 0;
-}
-
-
 void timerExpired(int UNUSED(i))
 {
 	redisRefresh(pattern);
@@ -511,11 +503,35 @@ void timerExpired(int UNUSED(i))
 
 	redisplay();
 
-	struct itimerval timer;
+/*
 	signal(SIGALRM, timerExpired);
 
+	struct itimerval timer;
 	setTimerInterval(&timer);
-	setitimer(ITIMER_REAL, &timer, 0);
+	setitimer(ITIMER_REAL, &timer, NULL);
+*/
+}
+
+void resetTimer(int interval)
+{
+	if (interval == 0)
+	{
+		// Turn off the timer
+		signal(SIGALRM, SIG_IGN);
+	}
+	else
+	{
+		signal(SIGALRM, timerExpired);
+	}
+
+	refreshInterval = interval;
+
+	struct itimerval timer;
+	timer.it_interval.tv_sec = refreshInterval;
+	timer.it_interval.tv_usec = 0;
+	timer.it_value.tv_sec = refreshInterval;
+	timer.it_value.tv_usec = 0;
+	setitimer(ITIMER_REAL, &timer, NULL);
 }
 
 
@@ -537,6 +553,8 @@ int getCommand(char* prompt, char* str, int max)
 
 	int		done = 0;
 	int		cancelled = 0;
+
+	signal(SIGALRM, SIG_IGN);
 
 	memset(command, 0, REDIS_MAX_COMMAND_LEN);
 
@@ -605,9 +623,11 @@ int getCommand(char* prompt, char* str, int max)
 	for (unsigned int i = 0; i < screenCols - 1; i++)
 		mvaddstr(row, i, " ");
 
+	if (refreshInterval)
+		signal(SIGALRM, timerExpired);
+
 	return 0;
 }
-
 
 
 int main(int argc, char* argv[])
@@ -615,6 +635,8 @@ int main(int argc, char* argv[])
 	strcpy(host, defaultHost);
 	port = defaultPort;
 	strcpy(pattern, defaultPattern);
+
+	char refreshIntervalBuffer[80];
 	refreshInterval = 0;
 
 	int c; 
@@ -649,17 +671,17 @@ int main(int argc, char* argv[])
 	argc -= optind;
 	argv += optind;
 
-	int done = 0;
 
 	sortReverse = 0;
 	sortBy = sortByKey;
 
+
 	initCurses();
 
-
+	
 	if (refreshInterval)
 	{
-		timerExpired(0);
+		resetTimer(refreshInterval);
 	}
 	else
 	{
@@ -669,12 +691,17 @@ int main(int argc, char* argv[])
 		redisplay();
 	}
 
+	int done = 0;
 	while (!done)
 	{
-		char d = getch();
+		int d = getch();
 
 		switch(d)
 		{
+			case KEY_RESIZE:
+				redisplay();
+				break;
+
 			case 'q':
 				done = 1;
 				break;
@@ -689,6 +716,13 @@ int main(int argc, char* argv[])
 				break;
 
 			case 'a':
+				if (getCommand("Refresh Interval (0 to turn off): ", 
+						refreshIntervalBuffer, 
+						sizeof(refreshIntervalBuffer)) == 0)
+				{
+					refreshInterval = atoi(refreshIntervalBuffer);
+					resetTimer(refreshInterval);
+				}
 				break;
 
 			case 'd':
