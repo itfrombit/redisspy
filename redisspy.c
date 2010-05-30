@@ -691,7 +691,7 @@ int redisSpyGetCommand(REDISSPYWINDOW* w, REDIS* redis, char* prompt, char* str,
 
 			case 10:
 			case 13:
-				if (strcmp(command, "!") == 0)
+				if (strcmp(command, ".") == 0)
 				{
 					// Return the previous command
 					strncpy(str, w->lastCommand, max - 1);
@@ -818,7 +818,8 @@ int main(int argc, char* argv[])
 
 			// Command Mode
 			case ':':
-				if (redisSpyGetCommand(g_redisSpyWindow, redis, "Command: ", 
+				if (redisSpyGetCommand(g_redisSpyWindow, redis, 
+							"Command: ", 
 							serverCommand, sizeof(serverCommand)) == 0)
 				{
 					//int r = 
@@ -835,6 +836,24 @@ int main(int argc, char* argv[])
 				}
 				break;
 
+			// Repeat last command			
+			case '.':
+				if (strlen(g_redisSpyWindow->lastCommand) > 0)
+				{
+					redisSpySendCommandToServer(redis, 
+								g_redisSpyWindow->lastCommand, 
+								serverReply, sizeof(serverReply));
+
+					redisSpySetBusySignal(g_redisSpyWindow, 1);
+					redisSpyServerRefresh(redis);
+					redisSpySetBusySignal(g_redisSpyWindow, 0);
+					redisSpySort(redis, 0);
+					redisSpyDraw(g_redisSpyWindow, redis);
+
+					redisSpySetCommandLineText(g_redisSpyWindow, serverReply);
+				}
+				break;
+	
 			// Quit
 			case 'q':
 				done = 1;
@@ -842,7 +861,8 @@ int main(int argc, char* argv[])
 
 			// Change key filter pattern
 			case 'p':
-				if (redisSpyGetCommand(g_redisSpyWindow, redis, "Pattern: ", 
+				if (redisSpyGetCommand(g_redisSpyWindow, redis, 
+							"Pattern: ", 
 							redis->pattern, sizeof(redis->pattern)) == 0)
 				{
 					redisSpySetBusySignal(g_redisSpyWindow, 1);
@@ -855,9 +875,10 @@ int main(int argc, char* argv[])
 
 			// Auto-refresh
 			case 'a':
-				if (redisSpyGetCommand(g_redisSpyWindow, redis, "Refresh Interval (0 to turn off): ", 
-						refreshIntervalBuffer, 
-						sizeof(refreshIntervalBuffer)) == 0)
+				if (redisSpyGetCommand(g_redisSpyWindow, redis, 
+							"Refresh Interval (0 to turn off): ", 
+							refreshIntervalBuffer, 
+							sizeof(refreshIntervalBuffer)) == 0)
 				{
 					int interval = atoi(refreshIntervalBuffer);
 					redisSpyResetTimer(redis, interval);
@@ -880,11 +901,11 @@ int main(int argc, char* argv[])
 
 			// Sorting commands:
 			// Repeated presses will toggle asc/desc
-			//  k - key
+			//  s - sort by key
 			//  t - type
 			//  l - length
 			//  v - value
-			case 'k':
+			case 's':
 				redisSpySort(redis, sortByKey);
 				redisSpyDraw(g_redisSpyWindow, redis);
 				break;

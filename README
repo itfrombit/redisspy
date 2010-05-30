@@ -16,7 +16,7 @@ Commands:
 	f : move forward a page (can also use spacebar)
 	b : move back a page
 
-	k : sort by key
+	s : sort by default (key)
 	t : sort by type
 	l : sort by length (bytes for string, # items for others)
 	v : sort by key value
