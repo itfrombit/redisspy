@@ -45,10 +45,17 @@
 #define REDIS_MAX_VALUE_LEN		2048
 #define REDIS_MAX_COMMAND_LEN	256
 
+static const char*				g_defaultHost = "127.0.0.1";
+static const int				g_defaultPort = 6379;
+static const char*				g_defaultPattern = "*";
 
-static const char*				defaultHost = "127.0.0.1";
-static const int				defaultPort = 6379;
-static const char*				defaultPattern = "*";
+
+
+#define sortByKey		1
+#define sortByType		2
+#define sortByLength	3
+#define sortByValue		4
+
 
 typedef struct
 {
@@ -85,21 +92,24 @@ REDIS* g_redis;
 #define MAXROWS	1000
 #define MAXCOLS	500
 
-static unsigned int	screenRows;
-static unsigned int	screenCols;
-static WINDOW*		screen;
-static unsigned int displayRows;
+typedef struct
+{
+	WINDOW*			window;
 
+	unsigned int	rows;
+	unsigned int	cols;
 
-static unsigned int	currentRow = 0;
-//static unsigned int	currentCol = 0;
-static unsigned int	startIndex = 0;
+	unsigned int	displayRows;
+	unsigned int	startIndex;
 
+	unsigned int	currentRow;
+	unsigned int	currentColumn;
 
-#define sortByKey		1
-#define sortByType		2
-#define sortByLength	3
-#define sortByValue		4
+	char			lastCommand[REDIS_MAX_COMMAND_LEN];
+} REDISSPYWINDOW;
+
+REDISSPYWINDOW* g_redisSpyWindow;
+
 
 
 // Sort functions
@@ -160,43 +170,80 @@ int compareValues(void* thunk, const void* a, const void* b)
 	return r;
 }
 
-// Screen drawing
-void redisSpyDraw(REDIS* redis)
+
+// Curses functions
+void redisSpySetBusySignal(REDISSPYWINDOW* w, int isBusy)
 {
-	unsigned int i = 0;
-	unsigned int redisIndex = startIndex;
-	char status[MAXCOLS];
-
-	getmaxyx(screen, screenRows, screenCols);
-	clear();
-
-	displayRows = screenRows - 3; // Title, Status, Command
-
+	// Put a busy signal on the status line
 	attron(A_STANDOUT);
 
-	strcpy(status, "Key                   Type    Length  Value");
-	for (i = strlen(status) - 1; i < screenCols - 1; i++)
-		status[i+1] = ' ';
-	status[screenCols] = '\0';
-
-	mvaddstr(0, 0, status);
+	if (isBusy)
+		mvaddstr(w->rows - 2, w->cols - 1, "*");
+	else
+		mvaddstr(w->rows - 2, w->cols - 1, " ");
 
 	attroff(A_STANDOUT);
-	//attroff(A_BOLD);
-	//attroff(A_REVERSE);
-	//attroff(A_UNDERLINE);
+	refresh();
+}
+
+void redisSpySetRowText(REDISSPYWINDOW* w, int row, int attr, char* text)
+{
+	if (attr)
+		attron(attr);
+
+	mvaddstr(row, 0, text);
+
+	for (unsigned int i = strlen(text); i < w->cols; i++)
+		addch(' ');
+
+	if (attr)
+		attroff(attr);
+
+	refresh();
+}
+
+void redisSpySetHeaderLineText(REDISSPYWINDOW* w, char* text)
+{
+	redisSpySetRowText(w, 0, A_STANDOUT, text);
+}
+
+void redisSpySetCommandLineText(REDISSPYWINDOW* w, char* text)
+{
+	redisSpySetRowText(w, w->rows - 1, 0, text);
+}
+
+void redisSpySetStatusLineText(REDISSPYWINDOW* w, char* text)
+{
+	redisSpySetRowText(w, w->rows - 2, A_STANDOUT, text);
+}
+
+// Screen drawing
+void redisSpyDraw(REDISSPYWINDOW* w, REDIS* redis)
+{
+	unsigned int i = 0;
+	unsigned int redisIndex = w->startIndex;
+	char status[MAXCOLS];
+
+	// In case the terminal window was resized...
+	getmaxyx(w->window, w->rows, w->cols);
+	clear();
+
+	w->displayRows = w->rows - 3; // Title, Status, Command
+
+
+	redisSpySetHeaderLineText(w, "Key                   Type    Length  Value");
 
 	i = 0;
-	while ((i < displayRows) && (redisIndex < redis->keyCount))
+	while ((i < w->displayRows) && (redisIndex < redis->keyCount))
 	{
 		char line[MAXCOLS];
 		sprintf(line, "%-20s  %-6s  %6d  ",
 				redis->data[redisIndex].key,
 				redis->data[redisIndex].type,
 				redis->data[redisIndex].length);
-		strncat(line, redis->data[redisIndex].value, screenCols - 38);
+		strncat(line, redis->data[redisIndex].value, w->cols - 38);
 
-		mvaddstr(i+1, 0, line); // skip the header row
+		mvaddstr(i + 1, 0, line); // skip the header row
 		++i;
 		++redisIndex;
 	}
@@ -218,84 +265,79 @@ void redisSpyDraw(REDIS* redis)
 			redis->infoUsedMemoryHuman);
 	}
 
-	for (i = strlen(status) - 1; i < screenCols - 1; i++)
-		status[i+1] = ' ';
-	status[screenCols] = '\0';
+	redisSpySetStatusLineText(w, status);
 
-	attron(A_STANDOUT);
-	mvaddstr(screenRows - 2, 0, status);
-	attroff(A_STANDOUT);
-
-	move(screenRows - 1, 0);
+	move(w->rows - 1, 0);
 
 	refresh();
 }
 
 // Curses functions
-void redisSpyInitCurses()
+REDISSPYWINDOW* redisSpyWindowCreate()
 {
-	screen = initscr();
+	REDISSPYWINDOW* w = malloc(sizeof(REDISSPYWINDOW));
+
+	// Init curses
+	w->window = initscr();
 	cbreak();
 	noecho();
-	getmaxyx(screen, screenRows, screenCols);
+	getmaxyx(w->window, w->rows, w->cols);
 	clear();
 	refresh();
+
+	return w;
 }
 
-void redisSpyQuitCurses()
+void redisSpyWindowDelete(REDISSPYWINDOW* w)
 {
 	endwin();
+
+	free(w);
 }
 
 
-void redisSpyHighlightCurrentRow(REDIS* redis)
+
+void redisSpyHighlightCurrentRow(REDISSPYWINDOW* w, REDIS* redis)
 {
 	attron(A_BOLD);
-	mvaddstr(currentRow, 0, redis->data[currentRow].key);
+	mvaddstr(w->currentRow, 0, redis->data[w->currentRow].key);
 	attroff(A_BOLD);
 	refresh();
 }
 
-void redisSpyPageup(REDIS* redis)
+void redisSpyPageup(REDISSPYWINDOW* w, REDIS* redis)
 {
-	if (((int)startIndex - (int)displayRows) < 0)
+	if (((int)w->startIndex - (int)w->displayRows) < 0)
 	{
-		startIndex = 0;
+		w->startIndex = 0;
 		beep();
 	}
 	else
 	{
-		startIndex -= displayRows;
+		w->startIndex -= w->displayRows;
 	}
 
-	redisSpyDraw(redis);
+	redisSpyDraw(w, redis);
 }
 
-void redisSpyPagedown(REDIS* redis)
+void redisSpyPagedown(REDISSPYWINDOW* w, REDIS* redis)
 {
-	if ((startIndex + displayRows) > redis->keyCount)
+	if ((w->startIndex + w->displayRows) > redis->keyCount)
 	{
 		beep();
 	}
 	else
 	{
-		startIndex += displayRows;
+		w->startIndex += w->displayRows;
 	}
 
-	redisSpyDraw(redis);
+	redisSpyDraw(w, redis);
 }
 
 
-void redisSpyHelp()
+void redisSpyHelp(REDISSPYWINDOW* w)
 {
-	char line[MAXCOLS];
-	strcpy(line, "r=refresh f,b=page k,t,l,v=sort q=quit");
-	for (unsigned int i = strlen(line); i < screenCols; i++)
-		safestrcat(line, " ");
-
-	attron(A_STANDOUT);
-	mvaddstr(screenRows - 1, 0, line);
-	attroff(A_STANDOUT);
+	redisSpySetCommandLineText(w, "r=refresh f,b=page k,t,l,v=sort q=quit");
 }
 
 // Redis functions
@@ -312,12 +354,6 @@ int redisSpyServerRefresh(REDIS* redis)
 	}
 
 	redis->deadServer = 0;
-
-	// Put a busy signal on the status line
-	attron(A_STANDOUT);
-	mvaddstr(screenRows - 2, screenCols - 1, "*");
-	attroff(A_STANDOUT);
-	refresh();
 
 	redis->infoConnectedClients = 0;
 	strcpy(redis->infoUsedMemoryHuman, "");
@@ -461,11 +497,6 @@ int redisSpyServerRefresh(REDIS* redis)
 
 	close(fd);
 
-	attron(A_STANDOUT);
-	mvaddstr(screenRows - 2, screenCols - 1, " ");
-	attroff(A_STANDOUT);
-	refresh();
-
 	return 0;
 }
 
@@ -508,9 +539,12 @@ void redisSpySort(REDIS* redis, int newSortBy)
 
 void timerExpired(int UNUSED(i))
 {
+	redisSpySetBusySignal(g_redisSpyWindow, 1);
 	redisSpyServerRefresh(g_redis);
+	redisSpySetBusySignal(g_redisSpyWindow, 0);
+
 	redisSpySort(g_redis, 0);
-	redisSpyDraw(g_redis);
+	redisSpyDraw(g_redisSpyWindow, g_redis);
 
 /*
 	// Don't have to reset signal handler each time
@@ -610,19 +644,7 @@ int redisSpySendCommandToServer(REDIS* redis, char* command, char* reply, int ma
 	return 0;
 }
 
-
-void redisSpySetCommandLineText(char* text)
-{
-	mvaddstr(screenRows - 1, 0, text);
-
-	for (unsigned int i = strlen(text); i < screenCols - 1; i++)
-		mvaddstr(screenRows - 1, i, " ");
-
-	refresh();
-}
-
-
-int redisSpyGetCommand(REDIS* redis, char* prompt, char* str, int max)
+int redisSpyGetCommand(REDISSPYWINDOW* w, REDIS* redis, char* prompt, char* str, int max)
 {
 	char	command[REDIS_MAX_COMMAND_LEN];
 
@@ -633,11 +655,11 @@ int redisSpyGetCommand(REDIS* redis, char* prompt, char* str, int max)
 
 	memset(command, 0, REDIS_MAX_COMMAND_LEN);
 
-	redisSpySetCommandLineText(prompt);
+	redisSpySetCommandLineText(w, prompt);
 
 	refresh();
 
-	int row = screenRows - 1;
+	int row = w->rows - 1;
 	int startCol = strlen(prompt);
 
 	int col = startCol;
@@ -669,7 +691,16 @@ int redisSpyGetCommand(REDIS* redis, char* prompt, char* str, int max)
 
 			case 10:
 			case 13:
-				strncpy(str, command, max - 1);
+				if (strcmp(command, "!") == 0)
+				{
+					// Return the previous command
+					strncpy(str, w->lastCommand, max - 1);
+				}
+				else
+				{
+					strncpy(str, command, max - 1);
+					strncpy(w->lastCommand, command, sizeof(w->lastCommand));
+				}
 				done = 1;
 				break;
 
@@ -695,15 +726,13 @@ int redisSpyGetCommand(REDIS* redis, char* prompt, char* str, int max)
 	// Restore the command line
 	//noecho();
 
-	for (unsigned int i = 0; i < screenCols - 1; i++)
-		mvaddstr(row, i, " ");
+	redisSpySetCommandLineText(w, "");
 
 	if (redis->refreshInterval)
 		signal(SIGALRM, timerExpired);
 
-	return 0;
+	return cancelled;
 }
-
 
 
 int main(int argc, char* argv[])
@@ -713,9 +742,10 @@ int main(int argc, char* argv[])
 	// Might hide the global redis better in the future...
 	REDIS* redis = g_redis;
 
-	strcpy(redis->host, defaultHost);
-	redis->port = defaultPort;
-	strcpy(redis->pattern, defaultPattern);
+
+	strcpy(redis->host, g_defaultHost);
+	redis->port = g_defaultPort;
+	strcpy(redis->pattern, g_defaultPattern);
 
 	char refreshIntervalBuffer[80];
 	redis->refreshInterval = 0;
@@ -755,17 +785,19 @@ int main(int argc, char* argv[])
 	argc -= optind;
 	argv += optind;
 
-
-	redisSpyInitCurses();
+	g_redisSpyWindow = redisSpyWindowCreate();
 
 	// Do initial manual refresh
 	// Set Reverse on so it toggles back to ascending
-	redis->sortReverse = 1;
+	redis->sortReverse = ~0;
 	redis->sortBy = sortByKey;
 
+	redisSpySetBusySignal(g_redisSpyWindow, 1);
 	redisSpyServerRefresh(redis);
+	redisSpySetBusySignal(g_redisSpyWindow, 0);
+
 	redisSpySort(redis, sortByKey);
-	redisSpyDraw(redis);
+	redisSpyDraw(g_redisSpyWindow, redis);
 
 	if (redis->refreshInterval)
 	{
@@ -781,41 +813,49 @@ int main(int argc, char* argv[])
 		switch(d)
 		{
 			case KEY_RESIZE:
-				redisSpyDraw(redis);
+				redisSpyDraw(g_redisSpyWindow, redis);
 				break;
 
+			// Command Mode
 			case ':':
-				if (redisSpyGetCommand(redis, "Command: ", 
+				if (redisSpyGetCommand(g_redisSpyWindow, redis, "Command: ", 
 							serverCommand, sizeof(serverCommand)) == 0)
 				{
 					//int r = 
 					redisSpySendCommandToServer(redis, serverCommand, 
 								serverReply, sizeof(serverReply));
 
+					redisSpySetBusySignal(g_redisSpyWindow, 1);
 					redisSpyServerRefresh(redis);
+					redisSpySetBusySignal(g_redisSpyWindow, 0);
 					redisSpySort(redis, 0);
-					redisSpyDraw(redis);
+					redisSpyDraw(g_redisSpyWindow, redis);
 
-					redisSpySetCommandLineText(serverReply);
+					redisSpySetCommandLineText(g_redisSpyWindow, serverReply);
 				}
 				break;
 
+			// Quit
 			case 'q':
 				done = 1;
 				break;
 
+			// Change key filter pattern
 			case 'p':
-				if (redisSpyGetCommand(redis, "Pattern: ", 
+				if (redisSpyGetCommand(g_redisSpyWindow, redis, "Pattern: ", 
 							redis->pattern, sizeof(redis->pattern)) == 0)
 				{
+					redisSpySetBusySignal(g_redisSpyWindow, 1);
 					redisSpyServerRefresh(redis);
+					redisSpySetBusySignal(g_redisSpyWindow, 0);
 					redisSpySort(redis, 0);
-					redisSpyDraw(redis);
+					redisSpyDraw(g_redisSpyWindow, redis);
 				}
 				break;
 
+			// Auto-refresh
 			case 'a':
-				if (redisSpyGetCommand(redis, "Refresh Interval (0 to turn off): ", 
+				if (redisSpyGetCommand(g_redisSpyWindow, redis, "Refresh Interval (0 to turn off): ", 
 						refreshIntervalBuffer, 
 						sizeof(refreshIntervalBuffer)) == 0)
 				{
@@ -824,14 +864,18 @@ int main(int argc, char* argv[])
 				}
 				break;
 
+			// Redraw screen
 			case 'd':
-				redisSpyDraw(redis);
+				redisSpyDraw(g_redisSpyWindow, redis);
 				break;
 
+			// Refresh data from server
 			case 'r':
+				redisSpySetBusySignal(g_redisSpyWindow, 1);
 				redisSpyServerRefresh(redis);
+				redisSpySetBusySignal(g_redisSpyWindow, 0);
 				redisSpySort(redis, 0);
-				redisSpyDraw(redis);
+				redisSpyDraw(g_redisSpyWindow, redis);
 				break;
 
 			// Sorting commands:
@@ -842,40 +886,43 @@ int main(int argc, char* argv[])
 			//  v - value
 			case 'k':
 				redisSpySort(redis, sortByKey);
-				redisSpyDraw(redis);
+				redisSpyDraw(g_redisSpyWindow, redis);
 				break;
 
 			case 't':
 				redisSpySort(redis, sortByType);
-				redisSpyDraw(redis);
+				redisSpyDraw(g_redisSpyWindow, redis);
 				break;
 
 			case 'l':
 				redisSpySort(redis, sortByLength);
-				redisSpyDraw(redis);
+				redisSpyDraw(g_redisSpyWindow, redis);
 				break;
 
 			case 'v':
 				redisSpySort(redis, sortByValue);
-				redisSpyDraw(redis);
+				redisSpyDraw(g_redisSpyWindow, redis);
 				break;
 
+			// Page down
 			case 'f':
 			case ' ':
-				redisSpyPagedown(redis);
+				redisSpyPagedown(g_redisSpyWindow, redis);
 				break;
 
+			// Page up
 			case 'b':
-				redisSpyPageup(redis);
+				redisSpyPageup(g_redisSpyWindow, redis);
 				break;
 
+			// Help
 			case '?':
-				redisSpyHelp();
+				redisSpyHelp(g_redisSpyWindow);
 				break;
 		}
 	}
 
-	redisSpyQuitCurses();
+	redisSpyWindowDelete(g_redisSpyWindow);
 
 	exit(0);
 }
