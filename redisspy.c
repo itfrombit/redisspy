@@ -267,7 +267,7 @@ void redisSpyDraw(REDISSPYWINDOW* w, REDIS* redis)
 
 	redisSpySetStatusLineText(w, status);
 
-	move(w->rows - 1, 0);
+	move(w->currentRow, w->currentColumn);
 
 	refresh();
 }
@@ -282,6 +282,10 @@ REDISSPYWINDOW* redisSpyWindowCreate()
 	cbreak();
 	noecho();
 	getmaxyx(w->window, w->rows, w->cols);
+
+	w->currentRow = 1;
+	w->currentColumn = 0;
+
 	clear();
 	refresh();
 
@@ -305,7 +309,50 @@ void redisSpyHighlightCurrentRow(REDISSPYWINDOW* w, REDIS* redis)
 	refresh();
 }
 
-void redisSpyPageup(REDISSPYWINDOW* w, REDIS* redis)
+
+void redisSpyMoveDown(REDISSPYWINDOW* w, REDIS* redis)
+{
+	if (   (w->currentRow < w->displayRows)
+	    && ((w->startIndex + w->currentRow) < redis->keyCount))
+	{
+		w->currentRow++;
+	}
+
+	move(w->currentRow,
+	     w->currentColumn);
+}
+
+
+void redisSpyMoveUp(REDISSPYWINDOW* w, REDIS* redis)
+{
+	if (w->currentRow > 1) 
+	{
+		w->currentRow--;
+	}
+
+	move(w->currentRow,
+	     w->currentColumn);
+}
+
+
+void redisSpyPageDown(REDISSPYWINDOW* w, REDIS* redis)
+{
+	if ((w->startIndex + w->displayRows) > redis->keyCount)
+	{
+		beep();
+	}
+	else
+	{
+		w->startIndex += w->displayRows;
+	}
+	
+	w->currentRow = 1;
+	w->currentColumn = 0;
+	
+	redisSpyDraw(w, redis);
+}
+
+void redisSpyPageUp(REDISSPYWINDOW* w, REDIS* redis)
 {
 	if (((int)w->startIndex - (int)w->displayRows) < 0)
 	{
@@ -317,20 +364,9 @@ void redisSpyPageup(REDISSPYWINDOW* w, REDIS* redis)
 		w->startIndex -= w->displayRows;
 	}
 
-	redisSpyDraw(w, redis);
-}
-
-void redisSpyPagedown(REDISSPYWINDOW* w, REDIS* redis)
-{
-	if ((w->startIndex + w->displayRows) > redis->keyCount)
-	{
-		beep();
-	}
-	else
-	{
-		w->startIndex += w->displayRows;
-	}
-
+	w->currentRow = 1;
+	w->currentColumn = 0;
+	
 	redisSpyDraw(w, redis);
 }
 
@@ -925,15 +961,25 @@ int main(int argc, char* argv[])
 				redisSpyDraw(g_redisSpyWindow, redis);
 				break;
 
+			// Move down
+			case 'j':
+				redisSpyMoveDown(g_redisSpyWindow, redis);
+				break;
+
+			// Move up
+			case 'k':
+				redisSpyMoveUp(g_redisSpyWindow, redis);
+				break;
+
 			// Page down
 			case 'f':
 			case ' ':
-				redisSpyPagedown(g_redisSpyWindow, redis);
+				redisSpyPageDown(g_redisSpyWindow, redis);
 				break;
 
 			// Page up
 			case 'b':
-				redisSpyPageup(g_redisSpyWindow, redis);
+				redisSpyPageUp(g_redisSpyWindow, redis);
 				break;
 
 			// Help
