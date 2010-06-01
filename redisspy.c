@@ -37,6 +37,7 @@
 # define UNUSED(x) x 
 #endif
 
+#define CTRL(char) (char - 'a' + 1)
 
 #define REDIS_MAX_HOST_LEN		128
 #define REDIS_MAX_TYPE_LEN		8
@@ -121,7 +122,6 @@ REDISSPYWINDOW* g_redisSpyWindow;
 		y = x; \
 		x = tmp; \
 	} 
-
 
 #define safestrcat(d, s) \
 	strncat(d, s, sizeof(d) - strlen(s) - 1);
@@ -218,7 +218,7 @@ void redisSpySetStatusLineText(REDISSPYWINDOW* w, char* text)
 }
 
 // Screen drawing
-void redisSpyDraw(REDISSPYWINDOW* w, REDIS* redis)
+int redisSpyDraw(REDISSPYWINDOW* w, REDIS* redis)
 {
 	unsigned int i = 0;
 	unsigned int redisIndex = w->startIndex;
@@ -270,6 +270,8 @@ void redisSpyDraw(REDISSPYWINDOW* w, REDIS* redis)
 	move(w->currentRow, w->currentColumn);
 
 	refresh();
+
+	return 0;
 }
 
 // Curses functions
@@ -310,7 +312,7 @@ void redisSpyHighlightCurrentRow(REDISSPYWINDOW* w, REDIS* redis)
 }
 
 
-void redisSpyMoveDown(REDISSPYWINDOW* w, REDIS* redis)
+int redisSpyEventMoveDown(REDISSPYWINDOW* w, REDIS* redis)
 {
 	if (   (w->currentRow < w->displayRows)
 	    && ((w->startIndex + w->currentRow) < redis->keyCount))
@@ -320,10 +322,12 @@ void redisSpyMoveDown(REDISSPYWINDOW* w, REDIS* redis)
 
 	move(w->currentRow,
 	     w->currentColumn);
+
+	return 0;
 }
 
 
-void redisSpyMoveUp(REDISSPYWINDOW* w, REDIS* redis)
+int redisSpyEventMoveUp(REDISSPYWINDOW* w, REDIS* UNUSED(redis))
 {
 	if (w->currentRow > 1) 
 	{
@@ -332,14 +336,17 @@ void redisSpyMoveUp(REDISSPYWINDOW* w, REDIS* redis)
 
 	move(w->currentRow,
 	     w->currentColumn);
+
+	return 0;
 }
 
 
-void redisSpyPageDown(REDISSPYWINDOW* w, REDIS* redis)
+int redisSpyEventPageDown(REDISSPYWINDOW* w, REDIS* redis)
 {
 	if ((w->startIndex + w->displayRows) > redis->keyCount)
 	{
 		beep();
+		return 0;
 	}
 	else
 	{
@@ -350,14 +357,18 @@ void redisSpyPageDown(REDISSPYWINDOW* w, REDIS* redis)
 	w->currentColumn = 0;
 	
 	redisSpyDraw(w, redis);
+
+	return 0;
 }
 
-void redisSpyPageUp(REDISSPYWINDOW* w, REDIS* redis)
+
+int redisSpyEventPageUp(REDISSPYWINDOW* w, REDIS* redis)
 {
 	if (((int)w->startIndex - (int)w->displayRows) < 0)
 	{
 		w->startIndex = 0;
 		beep();
+		return 0;
 	}
 	else
 	{
@@ -368,12 +379,16 @@ void redisSpyPageUp(REDISSPYWINDOW* w, REDIS* redis)
 	w->currentColumn = 0;
 	
 	redisSpyDraw(w, redis);
+
+	return 0;
 }
 
 
-void redisSpyHelp(REDISSPYWINDOW* w)
+int redisSpyEventHelp(REDISSPYWINDOW* w, REDIS* UNUSED(redis))
 {
 	redisSpySetCommandLineText(w, "r=refresh f,b=page k,t,l,v=sort q=quit");
+
+	return 0;
 }
 
 // Redis functions
@@ -771,23 +786,236 @@ int redisSpyGetCommand(REDISSPYWINDOW* w, REDIS* redis, char* prompt, char* str,
 }
 
 
-int main(int argc, char* argv[])
+///////////////////////////////////////////////////////////////////////
+//
+// Event Handlers
+//
+
+int redisSpyEventQuit(REDISSPYWINDOW* window, REDIS* UNUSED(redis))
 {
-	g_redis = malloc(sizeof(REDIS));
+	redisSpyWindowDelete(window);
+	exit(0);
+}
 
-	// Might hide the global redis better in the future...
-	REDIS* redis = g_redis;
+int redisSpyEventRefresh(REDISSPYWINDOW* window, REDIS* redis)
+{
+	redisSpySetBusySignal(window, 1);
+	redisSpyServerRefresh(redis);
+	redisSpySetBusySignal(window, 0);
+	redisSpySort(redis, 0);
+	redisSpyDraw(window, redis);
+
+	return 0;
+}
 
 
-	strcpy(redis->host, g_defaultHost);
-	redis->port = g_defaultPort;
-	strcpy(redis->pattern, g_defaultPattern);
+int redisSpyEventCommand(REDISSPYWINDOW* window, REDIS* redis)
+{
+	char serverCommand[256];
+	char serverReply[256];
 
+	if (redisSpyGetCommand(window, redis, 
+				"Command: ", 
+				serverCommand, sizeof(serverCommand)) == 0)
+	{
+		redisSpySendCommandToServer(redis, serverCommand, 
+					serverReply, sizeof(serverReply));
+
+		redisSpySetBusySignal(window, 1);
+		redisSpyServerRefresh(redis);
+		redisSpySetBusySignal(window, 0);
+		redisSpySort(redis, 0);
+		redisSpyDraw(window, redis);
+
+		redisSpySetCommandLineText(window, serverReply);
+	}
+
+	return 0;
+}
+
+
+int redisSpyEventRepeatCommand(REDISSPYWINDOW* window, REDIS* redis)
+{
+	char serverReply[256];
+
+	if (strlen(window->lastCommand) > 0)
+	{
+		redisSpySendCommandToServer(redis, 
+					window->lastCommand, 
+					serverReply, sizeof(serverReply));
+
+		redisSpySetBusySignal(window, 1);
+		redisSpyServerRefresh(redis);
+		redisSpySetBusySignal(window, 0);
+		redisSpySort(redis, 0);
+		redisSpyDraw(window, redis);
+
+		redisSpySetCommandLineText(window, serverReply);
+	}
+
+	return 0;
+}
+
+
+int redisSpyEventFilterKeys(REDISSPYWINDOW* window, REDIS* redis)
+{
+	// Change key filter pattern
+	if (redisSpyGetCommand(window, redis, 
+				"Pattern: ", 
+				redis->pattern, sizeof(redis->pattern)) == 0)
+	{
+		redisSpySetBusySignal(window, 1);
+		redisSpyServerRefresh(redis);
+		redisSpySetBusySignal(window, 0);
+		redisSpySort(redis, 0);
+		redisSpyDraw(window, redis);
+	}
+
+	return 0;
+}
+
+
+int redisSpyEventAutoRefresh(REDISSPYWINDOW* window, REDIS* redis)
+{
 	char refreshIntervalBuffer[80];
 	redis->refreshInterval = 0;
 
-	char serverCommand[256];
-	char serverReply[256];
+	// Auto-refresh
+	if (redisSpyGetCommand(window, redis, 
+				"Refresh Interval (0 to turn off): ", 
+				refreshIntervalBuffer, 
+				sizeof(refreshIntervalBuffer)) == 0)
+	{
+		int interval = atoi(refreshIntervalBuffer);
+		redisSpyResetTimer(redis, interval);
+	}
+
+	return 0;
+}
+
+
+
+// Sorting commands:
+// Repeated presses will toggle asc/desc
+//  s - sort by key
+//  t - type
+//  l - length
+//  v - value
+int redisSpyEventSortByKey(REDISSPYWINDOW* window, REDIS* redis)
+{
+	redisSpySort(redis, sortByKey);
+	redisSpyDraw(window, redis);
+
+	return 0;
+}
+
+
+int redisSpyEventSortByType(REDISSPYWINDOW* window, REDIS* redis)
+{
+	redisSpySort(redis, sortByType);
+	redisSpyDraw(window, redis);
+
+	return 0;
+}
+
+
+int redisSpyEventSortByLength(REDISSPYWINDOW* window, REDIS* redis)
+{
+	redisSpySort(redis, sortByLength);
+	redisSpyDraw(window, redis);
+
+	return 0;
+}
+
+
+int redisSpyEventSortByValue(REDISSPYWINDOW* window, REDIS* redis)
+{
+	redisSpySort(redis, sortByValue);
+	redisSpyDraw(window, redis);
+
+	return 0;
+}
+
+
+typedef struct 
+{
+	int		key;
+	int		(*handler)(REDISSPYWINDOW* w, REDIS* redis);
+} REDISDISPATCH;
+
+REDISDISPATCH dispatchTable[] = 
+{
+	{ KEY_RESIZE,		redisSpyDraw },
+	{ 'd',				redisSpyDraw },
+
+	{ 'q',				redisSpyEventQuit },
+
+	{ 'r',				redisSpyEventRefresh },
+	{ 'a',				redisSpyEventAutoRefresh },
+
+	{ ':',				redisSpyEventCommand },
+	{ '.',				redisSpyEventRepeatCommand },
+
+	{ 'p',				redisSpyEventFilterKeys },
+
+	{ 's',				redisSpyEventSortByKey },
+	{ 't',				redisSpyEventSortByType },
+	{ 'l',				redisSpyEventSortByLength },
+	{ 'v',				redisSpyEventSortByValue },
+
+	{ 'j',				redisSpyEventMoveDown },
+	{ KEY_DOWN,			redisSpyEventMoveDown },
+
+	{ 'k',				redisSpyEventMoveUp },
+	{ KEY_UP,			redisSpyEventMoveUp },
+
+	{ CTRL('f'),		redisSpyEventPageDown },
+	{ ' ',				redisSpyEventPageDown },
+
+	{ CTRL('b'),		redisSpyEventPageUp },
+
+	{ '?',				redisSpyEventHelp }
+};
+
+unsigned int dispatchTableSize = sizeof(dispatchTable)/sizeof(REDISDISPATCH);
+
+
+int redisSpyDispatchCommand(int command, REDISSPYWINDOW* w, REDIS* r)
+{
+	for (unsigned int i = 0; i < dispatchTableSize; i++)
+	{
+		if (dispatchTable[i].key == command)
+			return (*(dispatchTable[i].handler))(w, r);
+	}
+
+	return -1;
+}
+
+int redisSpyEventLoop(REDISSPYWINDOW* window, REDIS* redis)
+{
+	while (1)
+	{
+		int key = getch();
+
+		// try to dispatch
+		if (redisSpyDispatchCommand(key, window, redis))
+		{
+			redisSpySetCommandLineText(window,
+				"Unknown command");
+			move(window->currentRow, window->currentColumn);
+			beep();
+		}
+	}
+
+	return 0;
+}
+
+
+int redisSpyGetOptions(int argc, char* argv[], REDIS* redis)
+{
+	strcpy(redis->host, g_defaultHost);
+	redis->port = g_defaultPort;
+	strcpy(redis->pattern, g_defaultPattern);
 
 	int c; 
 	while ((c = getopt(argc, argv, "h:p:a:k:?")) != -1)
@@ -821,175 +1049,37 @@ int main(int argc, char* argv[])
 	argc -= optind;
 	argv += optind;
 
+	return 0;
+}
+
+
+int main(int argc, char* argv[])
+{
+	g_redis = malloc(sizeof(REDIS));
+
+	redisSpyGetOptions(argc, argv, g_redis);
+
 	g_redisSpyWindow = redisSpyWindowCreate();
 
 	// Do initial manual refresh
 	// Set Reverse on so it toggles back to ascending
-	redis->sortReverse = ~0;
-	redis->sortBy = sortByKey;
+	g_redis->sortReverse = ~0;
+	g_redis->sortBy = sortByKey;
 
 	redisSpySetBusySignal(g_redisSpyWindow, 1);
-	redisSpyServerRefresh(redis);
+	redisSpyServerRefresh(g_redis);
 	redisSpySetBusySignal(g_redisSpyWindow, 0);
 
-	redisSpySort(redis, sortByKey);
-	redisSpyDraw(g_redisSpyWindow, redis);
+	redisSpySort(g_redis, sortByKey);
+	redisSpyDraw(g_redisSpyWindow, g_redis);
 
-	if (redis->refreshInterval)
+	if (g_redis->refreshInterval)
 	{
 		// Start autorefresh
-		redisSpyResetTimer(redis, redis->refreshInterval);
+		redisSpyResetTimer(g_redis, g_redis->refreshInterval);
 	}
 
-	int done = 0;
-	while (!done)
-	{
-		int d = getch();
+	redisSpyEventLoop(g_redisSpyWindow, g_redis);
 
-		switch(d)
-		{
-			case KEY_RESIZE:
-				redisSpyDraw(g_redisSpyWindow, redis);
-				break;
-
-			// Command Mode
-			case ':':
-				if (redisSpyGetCommand(g_redisSpyWindow, redis, 
-							"Command: ", 
-							serverCommand, sizeof(serverCommand)) == 0)
-				{
-					//int r = 
-					redisSpySendCommandToServer(redis, serverCommand, 
-								serverReply, sizeof(serverReply));
-
-					redisSpySetBusySignal(g_redisSpyWindow, 1);
-					redisSpyServerRefresh(redis);
-					redisSpySetBusySignal(g_redisSpyWindow, 0);
-					redisSpySort(redis, 0);
-					redisSpyDraw(g_redisSpyWindow, redis);
-
-					redisSpySetCommandLineText(g_redisSpyWindow, serverReply);
-				}
-				break;
-
-			// Repeat last command			
-			case '.':
-				if (strlen(g_redisSpyWindow->lastCommand) > 0)
-				{
-					redisSpySendCommandToServer(redis, 
-								g_redisSpyWindow->lastCommand, 
-								serverReply, sizeof(serverReply));
-
-					redisSpySetBusySignal(g_redisSpyWindow, 1);
-					redisSpyServerRefresh(redis);
-					redisSpySetBusySignal(g_redisSpyWindow, 0);
-					redisSpySort(redis, 0);
-					redisSpyDraw(g_redisSpyWindow, redis);
-
-					redisSpySetCommandLineText(g_redisSpyWindow, serverReply);
-				}
-				break;
-	
-			// Quit
-			case 'q':
-				done = 1;
-				break;
-
-			// Change key filter pattern
-			case 'p':
-				if (redisSpyGetCommand(g_redisSpyWindow, redis, 
-							"Pattern: ", 
-							redis->pattern, sizeof(redis->pattern)) == 0)
-				{
-					redisSpySetBusySignal(g_redisSpyWindow, 1);
-					redisSpyServerRefresh(redis);
-					redisSpySetBusySignal(g_redisSpyWindow, 0);
-					redisSpySort(redis, 0);
-					redisSpyDraw(g_redisSpyWindow, redis);
-				}
-				break;
-
-			// Auto-refresh
-			case 'a':
-				if (redisSpyGetCommand(g_redisSpyWindow, redis, 
-							"Refresh Interval (0 to turn off): ", 
-							refreshIntervalBuffer, 
-							sizeof(refreshIntervalBuffer)) == 0)
-				{
-					int interval = atoi(refreshIntervalBuffer);
-					redisSpyResetTimer(redis, interval);
-				}
-				break;
-
-			// Redraw screen
-			case 'd':
-				redisSpyDraw(g_redisSpyWindow, redis);
-				break;
-
-			// Refresh data from server
-			case 'r':
-				redisSpySetBusySignal(g_redisSpyWindow, 1);
-				redisSpyServerRefresh(redis);
-				redisSpySetBusySignal(g_redisSpyWindow, 0);
-				redisSpySort(redis, 0);
-				redisSpyDraw(g_redisSpyWindow, redis);
-				break;
-
-			// Sorting commands:
-			// Repeated presses will toggle asc/desc
-			//  s - sort by key
-			//  t - type
-			//  l - length
-			//  v - value
-			case 's':
-				redisSpySort(redis, sortByKey);
-				redisSpyDraw(g_redisSpyWindow, redis);
-				break;
-
-			case 't':
-				redisSpySort(redis, sortByType);
-				redisSpyDraw(g_redisSpyWindow, redis);
-				break;
-
-			case 'l':
-				redisSpySort(redis, sortByLength);
-				redisSpyDraw(g_redisSpyWindow, redis);
-				break;
-
-			case 'v':
-				redisSpySort(redis, sortByValue);
-				redisSpyDraw(g_redisSpyWindow, redis);
-				break;
-
-			// Move down
-			case 'j':
-				redisSpyMoveDown(g_redisSpyWindow, redis);
-				break;
-
-			// Move up
-			case 'k':
-				redisSpyMoveUp(g_redisSpyWindow, redis);
-				break;
-
-			// Page down
-			case 'f':
-			case ' ':
-				redisSpyPageDown(g_redisSpyWindow, redis);
-				break;
-
-			// Page up
-			case 'b':
-				redisSpyPageUp(g_redisSpyWindow, redis);
-				break;
-
-			// Help
-			case '?':
-				redisSpyHelp(g_redisSpyWindow);
-				break;
-		}
-	}
-
-	redisSpyWindowDelete(g_redisSpyWindow);
-
-	exit(0);
+	return 0;
 }

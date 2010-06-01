@@ -12,20 +12,25 @@ Options:
 
 
 Commands:
+	q : quit
 
-	f : move forward a page (can also use spacebar)
-	b : move back a page
+	j : move down
+	k : move up
+
+	ctrl-f : move forward a page (can also use spacebar)
+	ctrl-b : move back a page
 
 	s : sort by default (key)
 	t : sort by type
 	l : sort by length (bytes for string, # items for others)
 	v : sort by key value
 
-	p : filter pattern
+	p : set filter pattern
 
 	r : refresh
-	a : toggle auto-refresh
+	a : auto-refresh
 
-	q : quit
+	: : command mode (send a command to the redis-server)
+
 	? : help
 
