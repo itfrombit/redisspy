@@ -1,36 +1,110 @@
+INTRODUCTION
+
 Spy on a redis database.
 
-redisspy [-h <host>] [-p <port>] [-a <interval>] [-k pattern]
+<A better description is in the works...>
+
+
+WARNING 
+
+This is primarily a debugging tool for development purposes.
+By default, it requests all key/value pairs in the database.
+
+Do not run this against a large production redis-server.
+
+
+USAGE
+
+redisspy [-h <host>] [-p <port>] [-a <interval>] [-f pattern] [-o] [-u] [-d]
 
 Options:
 
 	-h : specify a host. Default is localhost.
 	-p : specify a port. Default is 6379.
 
-	-k : specify a key pattern. Default is '*' (all keys)
 	-a : auto-refresh every <interval> seconds. Default is manual refresh.
+	-k : specify a key pattern. Default is '*' (all keys)
 
+	redisspy can also query a redis-server and dump the keys and value
+	to stdout.
+	-o : output formatted text dump of keys and values and exit
+	-u : output delimited text dump of keys and values and exit (default is formatted)
+	-d : set output text dump delimiter (default is '|')
 
 Commands:
+
 	q : quit
 
-	j : move down
-	k : move up
+	r : refresh
+	a : auto-refresh
 
-	ctrl-f : move forward a page (can also use spacebar)
-	ctrl-b : move back a page
+	: : command mode (send a command to the redis-server)
+	. : repeat previous command (useful for LPOP, etc.)
+
+	f : set key filter pattern. Default is all keys (*)
 
 	s : sort by default (key)
 	t : sort by type
 	l : sort by length (bytes for string, # items for others)
 	v : sort by key value
 
-	p : set filter pattern
+	j : move down (can also use down arrow)
+	k : move up (can also use up arrow)
 
-	r : refresh
-	a : auto-refresh
-
-	: : command mode (send a command to the redis-server)
+	ctrl-f : move forward a page (can also use spacebar)
+	ctrl-b : move back a page
 
 	? : help
 
+
+REQUIREMENTS
+
+redisspy works with any Redis version >= 1.2.0.
+
+redisspy requires the hiredis source found at
+	http://github.com/antirez/hiredis
+
+redisspy also requires the curses library.  If you have ncurses, change the
+Makefile from -lcurses to -lncurses.
+
+redisspy was written and tested on Mac OS X 10.6.3, but should work in 
+other Unix-like environments.
+
+
+INSTALLATION
+
+By default, the Makefile expects to find the hiredis source in the
+../hiredis directory.  This can be changed by updating the HIREDIS_ROOT
+variable in the Makefile.
+
+Build redisspy by typing "make".
+"make install" will copy the redisspy executable to /usr/local/bin.
+
+
+OPEN ISSUES
+
+See the latest issues and planned features at
+	http://github.com/itfrombit/redisspy/issues
+
+
+LICENSE
+
+redisspy is licensed under a BSD license, which matches the redis license.
+See the COPYING file for details.
+
+
+CREDITS
+
+redis was written by Salvatore Sanfilippo (antirez) and can be found at 
+	http://github.com/antirez/redis
+hiredis was written by Salvatore Sanfilippo (antirez) and can be found at 
+	http://github.com/antirez/hiredis
+
+Parts of the Makefile were copied from the hiredis Makefile in order to 
+be compatible with hiredis on SunOS.
+
+
+AUTHOR
+
+redisspy was written by Jeff Buck (itfrombit) and can be found at
+	http://github.com/itfrombit/redisspy

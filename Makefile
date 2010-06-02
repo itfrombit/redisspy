@@ -5,25 +5,25 @@
 #
 # This file is released under the BSD license, see the COPYING file
 
+HIREDIS_ROOT=../hiredis
+
 uname_S := $(shell sh -c 'uname -s 2>/dev/null || echo not')
 OPTIMIZATION?=-O2
 ifeq ($(uname_S),SunOS)
   CFLAGS?= -std=c99 -pedantic $(OPTIMIZATION) -Wall -W -D__EXTENSIONS__ -D_XPG6
   CCLINK?= -ldl -lnsl -lsocket -lm -lpthread
 else
-  CFLAGS?= -std=c99 -pedantic $(OPTIMIZATION) -Wall -W $(ARCH) $(PROF) -I../hiredis
-  CCLINK?= -lm -pthread -lncurses
+  CFLAGS?= -std=c99 -pedantic $(OPTIMIZATION) -Wall -W $(ARCH) $(PROF) -I$(HIREDIS_ROOT)
+  CCLINK?= -lm -pthread -lcurses
 endif
 CCOPT= $(CFLAGS) $(CCLINK) $(ARCH) $(PROF)
 DEBUG?= -g -rdynamic -ggdb 
 
-DUMPOBJ = ../hiredis/anet.o ../hiredis/hiredis.o ../hiredis/sds.o redisdump.o
-SPYOBJ = ../hiredis/anet.o ../hiredis/hiredis.o ../hiredis/sds.o redisspy.o
+SPYOBJ = $(HIREDIS_ROOT)/anet.o $(HIREDIS_ROOT)/hiredis.o $(HIREDIS_ROOT)/sds.o redisspy.o
 
-DUMPNAME = redisdump
 SPYNAME = redisspy
 
-all: redisspy redisdump
+all: redisspy
 
 # Deps (use make dep to generate this)
 redisspy.o: redisspy.c
@@ -31,16 +31,14 @@ redisspy.o: redisspy.c
 redisspy: $(SPYOBJ)
 	$(CC) -o $(SPYNAME) $(CCOPT) $(DEBUG) $(SPYOBJ)
 
-redisdump.o: redisdump.c
-
-redisdump: $(DUMPOBJ)
-	$(CC) -o $(DUMPNAME) $(CCOPT) $(DEBUG) $(DUMPOBJ)
-
 .c.o:
 	$(CC) -c $(CFLAGS) $(DEBUG) $(COMPILE_TIME) $<
 
+install:
+	cp $(SPYNAME) /usr/local/bin
+
 clean:
-	rm -rf $(DUMPNAME) $(SPYNAME) *.o *.gcda *.gcno *.gcov
+	rm -rf $(SPYNAME) *.o *.gcda *.gcno *.gcov
 
 dep:
 	$(CC) -MM *.c
