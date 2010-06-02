@@ -281,6 +281,11 @@ int redisSpyDraw(REDISSPY_WINDOW* w, REDIS* redis)
 		++redisIndex;
 	}
 
+	// In case our cursor was below the end of the new data set.
+	// i instead of (i - 1) because of the header row.
+	if (w->currentRow > i)
+		w->currentRow = i;
+
 	if (redis->deadServer)
 	{
 		sprintf(status, "[host=%s:%d] No Connection.", 
@@ -911,6 +916,11 @@ int redisSpyEventFilterKeys(REDISSPY_WINDOW* window, REDIS* redis)
 		redisSpyServerRefresh(redis);
 		redisSpySetBusySignal(window, 0);
 		redisSpySort(redis, 0);
+
+		window->startIndex = 0;
+		window->currentRow = 1;
+		window->currentColumn = 0;
+
 		redisSpyDraw(window, redis);
 	}
 
