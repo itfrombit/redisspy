@@ -37,22 +37,27 @@
 # define UNUSED(x) x 
 #endif
 
+#define MIN(X,Y) ((X) < (Y) ? (X) : (Y))
+#define MAX(X,Y) ((X) > (Y) ? (X) : (Y))
+
 #define CTRL(char) (char - 'a' + 1)
 
-#define REDISSPY_MAX_HOST_LEN		128
-#define REDISSPY_MAX_TYPE_LEN		8
-#define REDISSPY_MAX_KEY_LEN		64
-#define REDISSPY_MAX_PATTERN_LEN	REDISSPY_MAX_KEY_LEN
-#define REDISSPY_MAX_VALUE_LEN		2048
-#define REDISSPY_MAX_COMMAND_LEN	256
+#define REDISSPY_MAX_HOST_LEN			128
+#define REDISSPY_MAX_TYPE_LEN			8
+#define REDISSPY_MAX_KEY_LEN			64
+#define REDISSPY_MAX_PATTERN_LEN		REDISSPY_MAX_KEY_LEN
+#define REDISSPY_MAX_VALUE_LEN			2048
+#define REDISSPY_MAX_COMMAND_LEN		256
 
-#define REDISSPY_HEADER_ROWS		1
-#define REDISSPY_FOOTER_ROWS		2
 
-static const char*				g_defaultHost = "127.0.0.1";
-static const int				g_defaultPort = 6379;
-static const char*				g_defaultPattern = "*";
+#define REDISSPY_HEADER_ROWS			1
+#define REDISSPY_FOOTER_ROWS			2
 
+#define REDISSPY_MIN_KEY_FIELD_WIDTH	16
+
+#define REDISSPY_DEFAULT_HOST			"127.0.0.1"
+#define REDISSPY_DEFAULT_PORT			6379
+#define REDISSPY_DEFAULT_FILTER_PATTERN	"*"
 
 #define sortByKey		1
 #define sortByType		2
@@ -72,6 +77,7 @@ typedef struct
 {
 	REDISDATA*		data;
 	unsigned int	keyCount;
+	unsigned int	longestKeyLength;
 
 	char			pattern[REDISSPY_MAX_PATTERN_LEN];
 
@@ -241,17 +247,34 @@ int redisSpyDraw(REDISSPY_WINDOW* w, REDIS* redis)
 	w->statusRow = w->rows - 2;
 	w->commandRow = w->rows - 1;
 
-	redisSpySetHeaderLineText(w, "Key                   Type    Length  Value");
+	char dataFormat[32];
+	char headerFormat[32];
+	char headerText[REDISSPY_MAX_SCREEN_COLS];
+
+	int keyFieldWidth = MAX(REDISSPY_MIN_KEY_FIELD_WIDTH, redis->longestKeyLength);
+
+	sprintf(dataFormat,   "%%-%ds  %%-6s  %%6d  ", keyFieldWidth);
+
+	sprintf(headerFormat, "%%-%ds  %%-6s  %%6s  %%s", keyFieldWidth);
+	sprintf(headerText, headerFormat,
+				"Key",
+				"Type",
+				"Length",
+				"Value");
+
+	redisSpySetHeaderLineText(w, headerText);
 
 	i = 0;
 	while ((i < w->displayRows) && (redisIndex < redis->keyCount))
 	{
 		char line[REDISSPY_MAX_SCREEN_COLS];
-		sprintf(line, "%-20s  %-6s  %6d  ",
+
+		int len = sprintf(line, dataFormat,
 				redis->data[redisIndex].key,
 				redis->data[redisIndex].type,
 				redis->data[redisIndex].length);
-		strncat(line, redis->data[redisIndex].value, w->cols - 38);
+
+		strncat(line, redis->data[redisIndex].value, w->cols - len);
 
 		mvaddstr(i + REDISSPY_HEADER_ROWS, 0, line); // skip the header row
 		++i;
@@ -466,12 +489,17 @@ int redisSpyServerRefresh(REDIS* redis)
 			redis->data = malloc(r->elements * sizeof(REDISDATA));
 
 		redis->keyCount = r->elements;
+		redis->longestKeyLength = 0;
 
 		for (unsigned i = 0; i < r->elements; i++)
 		{
 			strncpy(redis->data[i].key, r->element[i]->reply, sizeof(redis->data[i].key) - 1);
 			redis->data[i].length = 0;
 			redis->data[i].value[0] = '\0';
+
+			unsigned int keyLength = strlen(r->element[i]->reply);
+			if (keyLength > redis->longestKeyLength)
+				redis->longestKeyLength = keyLength;
 
 			redisReply* t = redisCommand(fd, "TYPE %s", 
 			                             r->element[i]->reply);
@@ -1058,9 +1086,9 @@ void redisSpyDump(REDIS* redis, char* delimiter, int unaligned)
 
 int redisSpyGetOptions(int argc, char* argv[], REDIS* redis)
 {
-	strcpy(redis->host, g_defaultHost);
-	redis->port = g_defaultPort;
-	strcpy(redis->pattern, g_defaultPattern);
+	strcpy(redis->host, REDISSPY_DEFAULT_HOST);
+	redis->port = REDISSPY_DEFAULT_PORT;
+	strcpy(redis->pattern, REDISSPY_DEFAULT_FILTER_PATTERN);
 
 	int dump = 0;
 	int unaligned = 0;

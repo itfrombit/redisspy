@@ -78,7 +78,7 @@ By default, the Makefile expects to find the hiredis source in the
 variable in the Makefile.
 
 Build redisspy by typing "make".
-"make install" will copy the redisspy executable to /usr/local/bin.
+"sudo make install" will copy the redisspy executable to /usr/local/bin.
 
 
 OPEN ISSUES
@@ -108,3 +108,4 @@ AUTHOR
 
 redisspy was written by Jeff Buck (itfrombit) and can be found at
 	http://github.com/itfrombit/redisspy
+
