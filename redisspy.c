@@ -289,9 +289,10 @@ int redisSpyDraw(REDISSPY_WINDOW* w, REDIS* redis)
 	}
 	else
 	{
-		sprintf(status, "[host=%s:%d] [keys=%d] [%d%%] [clients=%d] [mem=%s]", 
+		sprintf(status, "[host=%s:%d] [filter=%s] [keys=%d] [%d%%] [clients=%d] [mem=%s]", 
 			redis->host, 
-			redis->port, 
+			redis->port,
+			redis->pattern,
 			redis->keyCount, 
 			redis->keyCount ? redisIndex*100/redis->keyCount : 0,
 			redis->infoConnectedClients, 
@@ -670,12 +671,17 @@ void redisSpyResetTimer(REDIS* redis, int interval)
 void usage()
 {
 	printf("usage: redisspy [-h <host>] [-p <port>] [-k <pattern>] [-a <interval>]\n");
+	printf("                [-o] [-u] [-d<delimiter>]\n");
 	printf("\n");
 	printf("    -h : Specify host. Default is localhost.\n");
 	printf("    -p : Specify port. Default is 6379.\n");
 	printf("    -k : Specify key pattern. Default is '*' (all keys).\n");
 	printf("    -a : Refresh every <interval> seconds. Default is manual refresh.\n");
 	printf("\n");
+	printf("  redisspy can also run in non-interactive mode.\n");
+	printf("    -o : output formatted dump of keys/values to stdout and exit\n");
+	printf("	-u : output delimited dump of keys/values to stdout and exit\n");
+	printf("    -d : change the output delimiter to <delimiter>. Default is '|'\n");
 }
 
 
@@ -1116,6 +1122,7 @@ int redisSpyGetOptions(int argc, char* argv[], REDIS* redis)
 				redis->refreshInterval = atoi(optarg);
 				break;
 
+			// The o,u,d options replace redisdump
 			case 'o':
 				dump = 1;
 				break;
