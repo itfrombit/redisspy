@@ -223,6 +223,7 @@ void redisSpySetHeaderLineText(REDISSPY_WINDOW* w, char* text)
 void redisSpySetCommandLineText(REDISSPY_WINDOW* w, char* text)
 {
 	redisSpySetRowText(w, w->commandRow, 0, text);
+	move(w->currentRow, w->currentColumn);
 }
 
 void redisSpySetStatusLineText(REDISSPY_WINDOW* w, char* text)
@@ -658,14 +659,21 @@ void redisSpySort(REDIS* redis, int newSortBy)
 
 // Driver
 
+int redisSpyEventRefresh(REDISSPY_WINDOW* window, REDIS* redis)
+{
+	redisSpySetBusySignal(window, 1);
+	redisSpyServerRefresh(redis);
+	redisSpySetBusySignal(window, 0);
+	redisSpySort(redis, 0);
+	redisSpyDraw(window, redis);
+
+	return 0;
+}
+
+
 void timerExpired(int UNUSED(i))
 {
-	redisSpySetBusySignal(g_redisSpyWindow, 1);
-	redisSpyServerRefresh(g_redis);
-	redisSpySetBusySignal(g_redisSpyWindow, 0);
-
-	redisSpySort(g_redis, 0);
-	redisSpyDraw(g_redisSpyWindow, g_redis);
+	redisSpyEventRefresh(g_redisSpyWindow, g_redis);
 
 /*
 	// Don't have to reset signal handler each time
@@ -872,17 +880,6 @@ int redisSpyEventQuit(REDISSPY_WINDOW* window, REDIS* UNUSED(redis))
 	exit(0);
 }
 
-int redisSpyEventRefresh(REDISSPY_WINDOW* window, REDIS* redis)
-{
-	redisSpySetBusySignal(window, 1);
-	redisSpyServerRefresh(redis);
-	redisSpySetBusySignal(window, 0);
-	redisSpySort(redis, 0);
-	redisSpyDraw(window, redis);
-
-	return 0;
-}
-
 
 int redisSpyEventCommand(REDISSPY_WINDOW* window, REDIS* redis)
 {
@@ -896,11 +893,7 @@ int redisSpyEventCommand(REDISSPY_WINDOW* window, REDIS* redis)
 		redisSpySendCommandToServer(redis, serverCommand, 
 					serverReply, sizeof(serverReply));
 
-		redisSpySetBusySignal(window, 1);
-		redisSpyServerRefresh(redis);
-		redisSpySetBusySignal(window, 0);
-		redisSpySort(redis, 0);
-		redisSpyDraw(window, redis);
+		redisSpyEventRefresh(window, redis);
 
 		redisSpySetCommandLineText(window, serverReply);
 	}
@@ -919,11 +912,7 @@ int redisSpyEventRepeatCommand(REDISSPY_WINDOW* window, REDIS* redis)
 					window->lastCommand, 
 					serverReply, sizeof(serverReply));
 
-		redisSpySetBusySignal(window, 1);
-		redisSpyServerRefresh(redis);
-		redisSpySetBusySignal(window, 0);
-		redisSpySort(redis, 0);
-		redisSpyDraw(window, redis);
+		redisSpyEventRefresh(window, redis);
 
 		redisSpySetCommandLineText(window, serverReply);
 	}
@@ -963,14 +952,95 @@ int redisSpyEventBatchFile(REDISSPY_WINDOW* window, REDIS* redis)
 
 		fclose(fp);
 
-		redisSpySetBusySignal(window, 1);
-		redisSpyServerRefresh(redis);
-		redisSpySetBusySignal(window, 0);
-		redisSpySort(redis, 0);
-		redisSpyDraw(window, redis);
+		redisSpyEventRefresh(window, redis);
+
 		redisSpySetCommandLineText(window, "File processed.");
 	}
 	return 0;
+}
+
+
+int redisSpyGetCurrentKeyIndex(REDISSPY_WINDOW* w, REDIS* UNUSED(redis))
+{
+	// Which key are we sitting on top of?
+	if ((w->currentRow < 1) || (w->currentRow > w->displayRows))
+	{
+		return -1;
+	}
+
+	return w->startIndex + w->currentRow - REDISSPY_HEADER_ROWS;
+}
+
+int redisSpyEventDeleteKey(REDISSPY_WINDOW* w, REDIS* redis)
+{
+	char serverCommand[256];
+	char serverReply[256];
+
+	int i = redisSpyGetCurrentKeyIndex(w, redis);
+
+	if (i < 0)
+	{
+		beep();
+		return 0;
+	}
+
+	snprintf(serverCommand, sizeof(serverCommand),
+				"DEL %s", redis->data[i].key);
+
+	redisSpySendCommandToServer(redis, serverCommand,
+					serverReply, sizeof(serverReply));
+
+	redisSpyEventRefresh(w, redis);
+
+	redisSpySetCommandLineText(w, serverReply);
+
+	return 0;
+}
+
+
+int redisSpyEventListPop(REDISSPY_WINDOW* w, REDIS* redis, char* command)
+{
+	char serverCommand[256];
+	char serverReply[256];
+
+	int i = redisSpyGetCurrentKeyIndex(w, redis);
+
+	if (i < 0)
+	{
+		beep();
+		return 0;
+	}
+
+	if (strcmp(redis->data[i].type, "list") != 0)
+	{
+		beep();
+		redisSpySetCommandLineText(w, "Not a list.");
+		return 0;
+	}
+
+	snprintf(serverCommand, sizeof(serverCommand),
+				"%s %s", command, redis->data[i].key);
+
+	redisSpySendCommandToServer(redis, serverCommand,
+					serverReply, sizeof(serverReply));
+
+	redisSpyEventRefresh(w, redis);
+
+	redisSpySetCommandLineText(w, serverReply);
+
+	return 0;
+}
+
+
+int redisSpyEventListLeftPop(REDISSPY_WINDOW* w, REDIS* redis)
+{
+	return redisSpyEventListPop(w, redis, "LPOP");
+}
+
+
+int redisSpyEventListRightPop(REDISSPY_WINDOW* w, REDIS* redis)
+{
+	return redisSpyEventListPop(w, redis, "RPOP");
 }
 
 
@@ -1068,7 +1138,11 @@ typedef struct
 static REDIS_DISPATCH g_dispatchTable[] = 
 {
 	{ KEY_RESIZE,		redisSpyDraw },
-	{ 'd',				redisSpyDraw },
+
+	{ 'd',				redisSpyEventDeleteKey },
+
+	{ '[',				redisSpyEventListLeftPop },
+	{ ']',				redisSpyEventListRightPop },
 
 	{ 'q',				redisSpyEventQuit },
 
