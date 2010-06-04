@@ -233,9 +233,12 @@ void redisSpySetStatusLineText(REDISSPY_WINDOW* w, char* text)
 // Screen drawing
 int redisSpyDraw(REDISSPY_WINDOW* w, REDIS* redis)
 {
-	unsigned int i = 0;
-	unsigned int redisIndex = w->startIndex;
 	char status[REDISSPY_MAX_SCREEN_COLS];
+
+	unsigned int redisIndex = w->startIndex;
+
+	if (w->startIndex > redis->keyCount)
+		w->startIndex = 0;
 
 	// In case the terminal window was resized...
 	getmaxyx(w->window, w->rows, w->cols);
@@ -264,7 +267,7 @@ int redisSpyDraw(REDISSPY_WINDOW* w, REDIS* redis)
 
 	redisSpySetHeaderLineText(w, headerText);
 
-	i = 0;
+	unsigned int i = 0;
 	while ((i < w->displayRows) && (redisIndex < redis->keyCount))
 	{
 		char line[REDISSPY_MAX_SCREEN_COLS];
@@ -357,23 +360,44 @@ int redisSpyEventMoveDown(REDISSPY_WINDOW* w, REDIS* redis)
 	{
 		w->currentRow++;
 	}
+	else if (   (w->currentRow >= w->displayRows)
+			 && ((w->startIndex + w->currentRow) < redis->keyCount))
+	{
+		w->startIndex++;
+	}
+	else
+	{
+		beep();
+	}
 
 	move(w->currentRow,
 	     w->currentColumn);
+
+	redisSpyDraw(w, redis);
 
 	return 0;
 }
 
 
-int redisSpyEventMoveUp(REDISSPY_WINDOW* w, REDIS* UNUSED(redis))
+int redisSpyEventMoveUp(REDISSPY_WINDOW* w, REDIS* redis)
 {
 	if (w->currentRow > 1) 
 	{
 		w->currentRow--;
 	}
+	else if (w->startIndex > 0)
+	{
+		w->startIndex--;
+	}
+	else
+	{
+		beep();
+	}
 
 	move(w->currentRow,
 	     w->currentColumn);
+
+	redisSpyDraw(w, redis);
 
 	return 0;
 }
@@ -381,7 +405,7 @@ int redisSpyEventMoveUp(REDISSPY_WINDOW* w, REDIS* UNUSED(redis))
 
 int redisSpyEventPageDown(REDISSPY_WINDOW* w, REDIS* redis)
 {
-	if ((w->startIndex + w->displayRows) > redis->keyCount)
+	if ((w->startIndex + w->displayRows) > redis->keyCount - 1)
 	{
 		beep();
 		return 0;
@@ -402,11 +426,14 @@ int redisSpyEventPageDown(REDISSPY_WINDOW* w, REDIS* redis)
 
 int redisSpyEventPageUp(REDISSPY_WINDOW* w, REDIS* redis)
 {
+	if (w->startIndex == 0)
+	{
+		beep();
+		return 0;
+	}
 	if (((int)w->startIndex - (int)w->displayRows) < 0)
 	{
 		w->startIndex = 0;
-		beep();
-		return 0;
 	}
 	else
 	{
@@ -905,6 +932,48 @@ int redisSpyEventRepeatCommand(REDISSPY_WINDOW* window, REDIS* redis)
 }
 
 
+int redisSpyEventBatchFile(REDISSPY_WINDOW* window, REDIS* redis)
+{
+	char filename[256];
+
+	if (redisSpyGetCommand(window, redis,
+				"File: ",
+				filename, sizeof(filename)) == 0)
+	{
+		FILE* fp;
+
+		fp = fopen(filename, "r");
+		if (fp == NULL)
+		{
+			redisSpySetCommandLineText(window, "File not found.");
+			return 0;
+		}
+		
+		char s[256];
+		char serverReply[256];
+
+		while (fgets(s, sizeof(s), fp) != NULL)
+		{
+			s[strlen(s)- 1] = '\0';
+			
+			if (s[0] != '\0' && s[0] != '#')
+				redisSpySendCommandToServer(redis, s,
+						serverReply, sizeof(serverReply));
+		}
+
+		fclose(fp);
+
+		redisSpySetBusySignal(window, 1);
+		redisSpyServerRefresh(redis);
+		redisSpySetBusySignal(window, 0);
+		redisSpySort(redis, 0);
+		redisSpyDraw(window, redis);
+		redisSpySetCommandLineText(window, "File processed.");
+	}
+	return 0;
+}
+
+
 int redisSpyEventFilterKeys(REDISSPY_WINDOW* window, REDIS* redis)
 {
 	// Change key filter pattern
@@ -1008,6 +1077,7 @@ static REDIS_DISPATCH g_dispatchTable[] =
 
 	{ ':',				redisSpyEventCommand },
 	{ '.',				redisSpyEventRepeatCommand },
+	{ 'b',				redisSpyEventBatchFile },
 
 	{ 'f',				redisSpyEventFilterKeys },
 
@@ -1015,6 +1085,7 @@ static REDIS_DISPATCH g_dispatchTable[] =
 	{ 't',				redisSpyEventSortByType },
 	{ 'l',				redisSpyEventSortByLength },
 	{ 'v',				redisSpyEventSortByValue },
+
 
 	{ 'j',				redisSpyEventMoveDown },
 	{ KEY_DOWN,			redisSpyEventMoveDown },
