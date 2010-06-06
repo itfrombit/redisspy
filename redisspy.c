@@ -188,29 +188,29 @@ int compareValues(void* thunk, const void* a, const void* b)
 void redisSpySetBusySignal(REDISSPY_WINDOW* w, int isBusy)
 {
 	// Put a busy signal on the status line
-	attron(A_STANDOUT);
+	wattron(w->window, A_STANDOUT);
 
 	if (isBusy)
-		mvaddstr(w->statusRow, w->cols - 1, "*");
+		mvwaddstr(w->window, w->statusRow, w->cols - 1, "*");
 	else
-		mvaddstr(w->statusRow, w->cols - 1, " ");
+		mvwaddstr(w->window, w->statusRow, w->cols - 1, " ");
 
-	attroff(A_STANDOUT);
+	wattroff(w->window, A_STANDOUT);
 	refresh();
 }
 
 void redisSpySetRowText(REDISSPY_WINDOW* w, int row, int attr, char* text)
 {
 	if (attr)
-		attron(attr);
+		wattron(w->window, attr);
 
-	mvaddstr(row, 0, text);
+	mvwaddstr(w->window, row, 0, text);
 
 	for (unsigned int i = strlen(text); i < w->cols; i++)
-		addch(' ');
+		waddch(w->window, ' ');
 
 	if (attr)
-		attroff(attr);
+		wattroff(w->window, attr);
 
 	refresh();
 }
@@ -223,7 +223,7 @@ void redisSpySetHeaderLineText(REDISSPY_WINDOW* w, char* text)
 void redisSpySetCommandLineText(REDISSPY_WINDOW* w, char* text)
 {
 	redisSpySetRowText(w, w->commandRow, 0, text);
-	move(w->currentRow, w->currentColumn);
+	wmove(w->window, w->currentRow, w->currentColumn);
 }
 
 void redisSpySetStatusLineText(REDISSPY_WINDOW* w, char* text)
@@ -243,7 +243,7 @@ int redisSpyDraw(REDISSPY_WINDOW* w, REDIS* redis)
 
 	// In case the terminal window was resized...
 	getmaxyx(w->window, w->rows, w->cols);
-	clear();
+	wclear(w->window);
 
 	w->displayRows = w->rows - 3; // Header, Status, Command
 
@@ -280,7 +280,7 @@ int redisSpyDraw(REDISSPY_WINDOW* w, REDIS* redis)
 
 		strncat(line, redis->data[redisIndex].value, w->cols - len);
 
-		mvaddstr(i + REDISSPY_HEADER_ROWS, 0, line); // skip the header row
+		mvwaddstr(w->window, i + REDISSPY_HEADER_ROWS, 0, line); // skip the header row
 		++i;
 		++redisIndex;
 	}
@@ -310,29 +310,43 @@ int redisSpyDraw(REDISSPY_WINDOW* w, REDIS* redis)
 
 	redisSpySetStatusLineText(w, status);
 
-	move(w->currentRow, w->currentColumn);
+	wmove(w->window, w->currentRow, w->currentColumn);
 
-	refresh();
+	wrefresh(w->window);
 
 	return 0;
 }
 
 // Curses functions
-REDISSPY_WINDOW* redisSpyWindowCreate()
+REDISSPY_WINDOW* redisSpyWindowCreate(REDISSPY_WINDOW* parent)
 {
 	REDISSPY_WINDOW* w = malloc(sizeof(REDISSPY_WINDOW));
 
 	// Init curses
-	w->window = initscr();
-	cbreak();
-	noecho();
+	if (parent == NULL)
+	{
+		w->window = initscr();
+		cbreak();
+		noecho();
+	}
+	else
+	{
+		w->window = newwin(parent->rows, parent->cols, 0, 0);
+	}
+
 	getmaxyx(w->window, w->rows, w->cols);
+
+	w->displayRows = w->rows - 3; // Header, Status, Command
+
+	w->headerRow = 0;
+	w->statusRow = w->rows - 2;
+	w->commandRow = w->rows - 1;
 
 	w->currentRow = REDISSPY_HEADER_ROWS;
 	w->currentColumn = 0;
 
 	clear();
-	refresh();
+	wrefresh(w->window);
 
 	return w;
 }
@@ -344,13 +358,20 @@ void redisSpyWindowDelete(REDISSPY_WINDOW* w)
 }
 
 
+void redisSpyWindowDeleteChild(REDISSPY_WINDOW* w)
+{
+	delwin(w->window);
+	free(w);
+}
+
+
 
 void redisSpyHighlightCurrentRow(REDISSPY_WINDOW* w, REDIS* redis)
 {
-	attron(A_BOLD);
-	mvaddstr(w->currentRow, 0, redis->data[w->currentRow].key);
-	attroff(A_BOLD);
-	refresh();
+	wattron(w->window, A_BOLD);
+	mvwaddstr(w->window, w->currentRow, 0, redis->data[w->currentRow].key);
+	wattroff(w->window, A_BOLD);
+	wrefresh(w->window);
 }
 
 
@@ -371,8 +392,9 @@ int redisSpyEventMoveDown(REDISSPY_WINDOW* w, REDIS* redis)
 		beep();
 	}
 
-	move(w->currentRow,
-	     w->currentColumn);
+	wmove(w->window,
+		  w->currentRow,
+	      w->currentColumn);
 
 	redisSpyDraw(w, redis);
 
@@ -395,8 +417,9 @@ int redisSpyEventMoveUp(REDISSPY_WINDOW* w, REDIS* redis)
 		beep();
 	}
 
-	move(w->currentRow,
-	     w->currentColumn);
+	wmove(w->window,
+		  w->currentRow,
+	      w->currentColumn);
 
 	redisSpyDraw(w, redis);
 
@@ -791,7 +814,7 @@ int redisSpyGetCommand(REDISSPY_WINDOW* w, REDIS* redis, char* prompt, char* str
 
 	redisSpySetCommandLineText(w, prompt);
 
-	refresh();
+	wrefresh(w->window);
 
 	int row = w->rows - 1;
 	int startCol = strlen(prompt);
@@ -799,11 +822,11 @@ int redisSpyGetCommand(REDISSPY_WINDOW* w, REDIS* redis, char* prompt, char* str
 	int col = startCol;
 	int idx = 0;
 
-	move(row, col);
+	wmove(w->window, row, col);
 
 	while (!done && !cancelled)
 	{
-		char c = getch();
+		char c = wgetch(w->window);
 
 		switch (c)
 		{
@@ -818,8 +841,8 @@ int redisSpyGetCommand(REDISSPY_WINDOW* w, REDIS* redis, char* prompt, char* str
 					col--;
 					idx--;
 					command[idx] = 0;
-					move(row, col);
-					delch();
+					wmove(w->window, row, col);
+					wdelch(w->window);
 				}
 				break;
 
@@ -841,13 +864,13 @@ int redisSpyGetCommand(REDISSPY_WINDOW* w, REDIS* redis, char* prompt, char* str
 			default:
 				if (isprint(c) && (idx < REDISSPY_MAX_COMMAND_LEN))
 				{
-					insch(c);
+					winsch(w->window, c);
 
 					col++;
 					command[idx++] = c;
 
-					move(row, col);
-					refresh();
+					wmove(w->window, row, col);
+					wrefresh(w->window);
 				}
 				else
 				{
@@ -1044,6 +1067,37 @@ int redisSpyEventListRightPop(REDISSPY_WINDOW* w, REDIS* redis)
 }
 
 
+int redisSpyEventViewDetails(REDISSPY_WINDOW* w, REDIS* redis)
+{
+	REDISSPY_WINDOW* dw = redisSpyWindowCreate(w);
+
+	redisSpySetHeaderLineText(dw, "Details");
+	wrefresh(dw->window);
+
+	int done = 0;
+
+	while (!done)
+	{
+		char c = wgetch(w->window);
+
+		switch (c)
+		{
+			case 'q':
+				redisSpyWindowDeleteChild(dw);
+				done = 1;
+				break;
+
+			default:
+				beep();
+		}
+	}
+
+	redisSpyEventRefresh(w, redis);
+
+	return 0;
+}
+
+
 int redisSpyEventFilterKeys(REDISSPY_WINDOW* window, REDIS* redis)
 {
 	// Change key filter pattern
@@ -1144,6 +1198,8 @@ static REDIS_DISPATCH g_dispatchTable[] =
 	{ '[',				redisSpyEventListLeftPop },
 	{ ']',				redisSpyEventListRightPop },
 
+	{ 'o',				redisSpyEventViewDetails },
+
 	{ 'q',				redisSpyEventQuit },
 
 	{ 'r',				redisSpyEventRefresh },
@@ -1190,18 +1246,18 @@ int redisSpyDispatchCommand(int command, REDISSPY_WINDOW* w, REDIS* r)
 	return -1;
 }
 
-int redisSpyEventLoop(REDISSPY_WINDOW* window, REDIS* redis)
+int redisSpyEventLoop(REDISSPY_WINDOW* w, REDIS* redis)
 {
 	while (1)
 	{
-		int key = getch();
+		int key = wgetch(w->window);
 
 		// try to dispatch
-		if (redisSpyDispatchCommand(key, window, redis))
+		if (redisSpyDispatchCommand(key, w, redis))
 		{
-			redisSpySetCommandLineText(window,
+			redisSpySetCommandLineText(w,
 				"Unknown command");
-			move(window->currentRow, window->currentColumn);
+			wmove(w->window, w->currentRow, w->currentColumn);
 			beep();
 		}
 	}
@@ -1318,7 +1374,7 @@ int main(int argc, char* argv[])
 
 	redisSpyGetOptions(argc, argv, g_redis);
 
-	g_redisSpyWindow = redisSpyWindowCreate();
+	g_redisSpyWindow = redisSpyWindowCreate(NULL);
 
 	// Do initial manual refresh
 	// Set Reverse on so it toggles back to ascending
