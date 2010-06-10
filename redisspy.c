@@ -15,6 +15,7 @@
 //   ? : help
 //
 
+#include <sys/syslimits.h>
 #include <stdlib.h>
 #include <string.h>
 #include <getopt.h>
@@ -40,21 +41,29 @@
 #define MIN(X,Y) ((X) < (Y) ? (X) : (Y))
 #define MAX(X,Y) ((X) > (Y) ? (X) : (Y))
 
+// Declare control characters in their mnemonic form
+//	e.g.: CTRL('f') = 6
 #define CTRL(char) (char - 'a' + 1)
 
+// Max values for string buffers
 #define REDISSPY_MAX_HOST_LEN			128
 #define REDISSPY_MAX_TYPE_LEN			8
 #define REDISSPY_MAX_KEY_LEN			64
 #define REDISSPY_MAX_PATTERN_LEN		REDISSPY_MAX_KEY_LEN
 #define REDISSPY_MAX_VALUE_LEN			2048
 #define REDISSPY_MAX_COMMAND_LEN		256
+#define REDISSPY_MAX_SERVER_REPLY_LEN	2048
 
+// Curses data
+#define REDISSPY_MAX_SCREEN_ROWS	1000
+#define REDISSPY_MAX_SCREEN_COLS	500
 
 #define REDISSPY_HEADER_ROWS			1
 #define REDISSPY_FOOTER_ROWS			2
 
 #define REDISSPY_MIN_KEY_FIELD_WIDTH	16
 
+// Command line defaults
 #define REDISSPY_DEFAULT_HOST			"127.0.0.1"
 #define REDISSPY_DEFAULT_PORT			6379
 #define REDISSPY_DEFAULT_FILTER_PATTERN	"*"
@@ -91,15 +100,11 @@ typedef struct
 
 	char			host[REDISSPY_MAX_HOST_LEN];
 	unsigned int	port;
-
-	int				deadServer;
+	int				fd;
 } REDIS;
 
 REDIS* g_redis;
 
-// Curses data
-#define REDISSPY_MAX_SCREEN_ROWS	1000
-#define REDISSPY_MAX_SCREEN_COLS	500
 
 typedef struct
 {
@@ -290,7 +295,7 @@ int redisSpyDraw(REDISSPY_WINDOW* w, REDIS* redis)
 	if (w->currentRow > i)
 		w->currentRow = i;
 
-	if (redis->deadServer)
+	if (redis->fd < 0)
 	{
 		sprintf(status, "[host=%s:%d] No Connection.", 
 			redis->host, 
@@ -481,24 +486,75 @@ int redisSpyEventHelp(REDISSPY_WINDOW* w, REDIS* UNUSED(redis))
 }
 
 // Redis functions
-int redisSpyServerRefresh(REDIS* redis)
-{
-	int fd = -1;
-	redisReply* r = NULL;
 
-	r = redisConnect(&fd, redis->host, redis->port);
-	if (r != NULL)
+int redisSpyConnect(REDIS* r, char* host, unsigned int port)
+{
+	int	fd;
+
+	if (   (strncmp(r->host, host, sizeof(r->host)) == 0)
+		&& (r->port == port)
+		&& (r->fd > 0))
 	{
-		redis->deadServer = 1;
+		// Have a connection. Make sure it is still alive.
+		redisReply* reply = redisCommand(r->fd, "PING");
+
+		if (   reply 
+			&& (strncmp(reply->reply, "PONG", 4) == 0))
+		{
+			// Good to go with cached connection
+			freeReplyObject(reply);
+			return 0;
+		}
+
+		if (reply)
+			freeReplyObject(reply);
+	}
+
+	// Create a new connection
+	redisReply* reply = redisConnect(&fd, host, port);
+
+	strncpy(r->host, host, sizeof(r->host));
+	r->port = port;
+
+	if (reply != NULL)
+	{
+		r->fd = -1;
 		return -1;
 	}
 
-	redis->deadServer = 0;
+	r->fd = fd;
+
+	return 0;
+}
+
+int redisSpyServerClearCache(REDIS* redis)
+{
+	if (redis == NULL)
+		return -1;
+
+	free(redis->data);
+	redis->data = NULL;
+
+	redis->keyCount = 0;
+	redis->longestKeyLength = 0;
+
+	return 0;
+}
+
+int redisSpyServerRefresh(REDIS* redis)
+{
+	redisReply* r = NULL;
+
+	int ret = redisSpyConnect(redis, redis->host, redis->port);
+	if (ret)
+	{
+		return -1;
+	}
 
 	redis->infoConnectedClients = 0;
 	redis->infoUsedMemoryHuman[0] = '\0';
 
-	r = redisCommand(fd, "INFO");
+	r = redisCommand(redis->fd, "INFO");
 	if (r->type == REDIS_REPLY_STRING)
 	{
 		char*	c = strstr(r->reply, "connected_clients");
@@ -531,7 +587,7 @@ int redisSpyServerRefresh(REDIS* redis)
 	}
 
 
-	r = redisCommand(fd, "KEYS %s", redis->pattern);
+	r = redisCommand(redis->fd, "KEYS %s", redis->pattern);
 	if (r->type == REDIS_REPLY_ARRAY)
 	{
 		// If our current buffer is big enough, don't bother
@@ -558,7 +614,7 @@ int redisSpyServerRefresh(REDIS* redis)
 			if (keyLength > redis->longestKeyLength)
 				redis->longestKeyLength = keyLength;
 
-			redisReply* t = redisCommand(fd, "TYPE %s", 
+			redisReply* t = redisCommand(redis->fd, "TYPE %s", 
 			                             r->element[i]->reply);
 
 			strncpy(redis->data[i].type, t->reply, sizeof(redis->data[i].type) - 1);
@@ -567,14 +623,14 @@ int redisSpyServerRefresh(REDIS* redis)
 
 			if (strcmp(t->reply, "string") == 0)
 			{
-				v = redisCommand(fd, "GET %s", r->element[i]->reply);
+				v = redisCommand(redis->fd, "GET %s", r->element[i]->reply);
 
 				strncpy(redis->data[i].value, v->reply, sizeof(redis->data[i].value) - 1);
 				redis->data[i].length = strlen(v->reply);
 			}
 			else if (strcmp(t->reply, "list") == 0)
 			{
-				v = redisCommand(fd, "LRANGE %s 0 -1", r->element[i]->reply);
+				v = redisCommand(redis->fd, "LRANGE %s 0 -1", r->element[i]->reply);
 
 				redis->data[i].length = v->elements;
 
@@ -588,7 +644,7 @@ int redisSpyServerRefresh(REDIS* redis)
 			}
 			else if (strcmp(t->reply, "hash") == 0)
 			{
-				v = redisCommand(fd, "HGETALL %s", r->element[i]->reply);
+				v = redisCommand(redis->fd, "HGETALL %s", r->element[i]->reply);
 
 				redis->data[i].length = v->elements >> 1;
 
@@ -610,7 +666,7 @@ int redisSpyServerRefresh(REDIS* redis)
 			}
 			else if (strcmp(t->reply, "set") == 0)
 			{
-				v = redisCommand(fd, "SMEMBERS %s", r->element[i]->reply);
+				v = redisCommand(redis->fd, "SMEMBERS %s", r->element[i]->reply);
 				redis->data[i].length = v->elements;
 
 				for (unsigned j = 0; j < v->elements; j++)
@@ -623,7 +679,7 @@ int redisSpyServerRefresh(REDIS* redis)
 			}
 			else if (strcmp(t->reply, "zset") == 0)
 			{
-				v = redisCommand(fd, "ZRANGE %s 0 -1", r->element[i]->reply);
+				v = redisCommand(redis->fd, "ZRANGE %s 0 -1", r->element[i]->reply);
 				redis->data[i].length = v->elements;
 
 				for (unsigned j = 0; j < v->elements; j++)
@@ -639,8 +695,6 @@ int redisSpyServerRefresh(REDIS* redis)
 			freeReplyObject(t);
 		}
 	}
-
-	close(fd);
 
 	return 0;
 }
@@ -748,15 +802,35 @@ void usage()
 }
 
 
-int redisSpySendCommandToServer(REDIS* redis, char* command, char* reply, int maxReplyLen)
+redisReply* redisSpyGetServerResponse(REDIS* redis, char* command)
 {
-	int fd = -1;
 	redisReply* r = NULL;
 
 	signal(SIGALRM, SIG_IGN);
 
-	r = redisConnect(&fd, redis->host, redis->port);
-	if (r != NULL)
+	int ret = redisSpyConnect(redis, redis->host, redis->port);
+
+	if (ret)
+	{
+		return NULL;
+	}
+
+	r = redisCommand(redis->fd, command);
+
+	if (redis->refreshInterval)
+		signal(SIGALRM, timerExpired);
+
+	return r;
+}
+
+int redisSpySendCommandToServer(REDIS* redis, char* command, char* reply, int maxReplyLen)
+{
+	redisReply* r = NULL;
+
+	signal(SIGALRM, SIG_IGN);
+
+	int ret = redisSpyConnect(redis, redis->host, redis->port);
+	if (ret)
 	{
 		strncpy(reply, "Could connect to server.", maxReplyLen - 1);
 
@@ -766,7 +840,7 @@ int redisSpySendCommandToServer(REDIS* redis, char* command, char* reply, int ma
 		return -1;
 	}
 
-	r = redisCommand(fd, command);
+	r = redisCommand(redis->fd, command);
 
 	if (r)
 	{
@@ -792,8 +866,6 @@ int redisSpySendCommandToServer(REDIS* redis, char* command, char* reply, int ma
 
 		freeReplyObject(r);
 	}
-
-	close(fd);
 
 	if (redis->refreshInterval)
 		signal(SIGALRM, timerExpired);
@@ -904,10 +976,48 @@ int redisSpyEventQuit(REDISSPY_WINDOW* window, REDIS* UNUSED(redis))
 }
 
 
+int redisSpyEventConnectToHost(REDISSPY_WINDOW* window, REDIS* redis)
+{
+	char hostPrompt[REDISSPY_MAX_COMMAND_LEN];
+	char hostBuffer[REDISSPY_MAX_COMMAND_LEN];
+	char portBuffer[REDISSPY_MAX_COMMAND_LEN];
+	unsigned int port;
+
+	sprintf(hostPrompt, "Host: (Default is %s): ", redis->host);
+
+	if (redisSpyGetCommand(window, redis, 
+				hostPrompt,
+				hostBuffer, sizeof(hostBuffer)) == 0)
+	{
+		if (redisSpyGetCommand(window, redis,
+				"Port (Default is 6379): ",
+				portBuffer, sizeof(portBuffer)) == 0)
+		{
+			if (hostBuffer[0] == '\0')
+				strncpy(hostBuffer, redis->host, sizeof(hostBuffer));
+
+			if (portBuffer[0] == '\0')
+				port = REDISSPY_DEFAULT_PORT;
+			else
+				port = (unsigned int)atoi(portBuffer);
+
+			int r = redisSpyConnect(redis, hostBuffer, port);
+
+			if (r != 0)
+				redisSpyServerClearCache(redis);
+
+			redisSpyEventRefresh(window, redis);
+		}
+	}
+
+	return 0;
+}
+
+
 int redisSpyEventCommand(REDISSPY_WINDOW* window, REDIS* redis)
 {
-	char serverCommand[256];
-	char serverReply[256];
+	char serverCommand[REDISSPY_MAX_COMMAND_LEN];
+	char serverReply[REDISSPY_MAX_SERVER_REPLY_LEN];
 
 	if (redisSpyGetCommand(window, redis, 
 				"Command: ", 
@@ -927,7 +1037,7 @@ int redisSpyEventCommand(REDISSPY_WINDOW* window, REDIS* redis)
 
 int redisSpyEventRepeatCommand(REDISSPY_WINDOW* window, REDIS* redis)
 {
-	char serverReply[256];
+	char serverReply[REDISSPY_MAX_SERVER_REPLY_LEN];
 
 	if (strlen(window->lastCommand) > 0)
 	{
@@ -946,7 +1056,7 @@ int redisSpyEventRepeatCommand(REDISSPY_WINDOW* window, REDIS* redis)
 
 int redisSpyEventBatchFile(REDISSPY_WINDOW* window, REDIS* redis)
 {
-	char filename[256];
+	char filename[PATH_MAX];
 
 	if (redisSpyGetCommand(window, redis,
 				"File: ",
@@ -961,8 +1071,8 @@ int redisSpyEventBatchFile(REDISSPY_WINDOW* window, REDIS* redis)
 			return 0;
 		}
 		
-		char s[256];
-		char serverReply[256];
+		char s[REDISSPY_MAX_COMMAND_LEN];
+		char serverReply[REDISSPY_MAX_SERVER_REPLY_LEN];
 
 		while (fgets(s, sizeof(s), fp) != NULL)
 		{
@@ -996,8 +1106,8 @@ int redisSpyGetCurrentKeyIndex(REDISSPY_WINDOW* w, REDIS* UNUSED(redis))
 
 int redisSpyEventDeleteKey(REDISSPY_WINDOW* w, REDIS* redis)
 {
-	char serverCommand[256];
-	char serverReply[256];
+	char serverCommand[REDISSPY_MAX_COMMAND_LEN];
+	char serverReply[REDISSPY_MAX_SERVER_REPLY_LEN];
 
 	int i = redisSpyGetCurrentKeyIndex(w, redis);
 
@@ -1023,8 +1133,8 @@ int redisSpyEventDeleteKey(REDISSPY_WINDOW* w, REDIS* redis)
 
 int redisSpyEventListPop(REDISSPY_WINDOW* w, REDIS* redis, char* command)
 {
-	char serverCommand[256];
-	char serverReply[256];
+	char serverCommand[REDISSPY_MAX_COMMAND_LEN];
+	char serverReply[REDISSPY_MAX_SERVER_REPLY_LEN];
 
 	int i = redisSpyGetCurrentKeyIndex(w, redis);
 
@@ -1071,7 +1181,101 @@ int redisSpyEventViewDetails(REDISSPY_WINDOW* w, REDIS* redis)
 {
 	REDISSPY_WINDOW* dw = redisSpyWindowCreate(w);
 
-	redisSpySetHeaderLineText(dw, "Details");
+	int index = redisSpyGetCurrentKeyIndex(w, redis);
+
+	char headerText[REDISSPY_MAX_SCREEN_COLS];
+	char statusText[REDISSPY_MAX_SCREEN_COLS];
+
+	snprintf(headerText, REDISSPY_MAX_SCREEN_COLS,
+			"Key Details: %s",
+			redis->data[index].key);
+			
+	snprintf(statusText, REDISSPY_MAX_SCREEN_COLS,
+			"[type=%s]  [len=%d]",
+			redis->data[index].type,
+			redis->data[index].length);
+
+	redisSpySetHeaderLineText(dw, headerText);
+	redisSpySetStatusLineText(dw, statusText);
+
+	redisReply* r = NULL;
+	char serverCommand[REDISSPY_MAX_COMMAND_LEN];
+
+	if (strcmp(redis->data[index].type, "string") == 0)
+	{
+		snprintf(serverCommand, REDISSPY_MAX_COMMAND_LEN,
+				"GET %s", redis->data[index].key);
+
+		r = redisSpyGetServerResponse(redis, serverCommand);
+
+		if (r)
+		{
+			mvwaddstr(dw->window, REDISSPY_HEADER_ROWS, 0,
+					  r->reply);
+		}
+	}
+	else if (   (strcmp(redis->data[index].type, "list") == 0)
+			 || (strcmp(redis->data[index].type, "set") == 0)
+			 || (strcmp(redis->data[index].type, "zset") == 0))
+	{
+		if (strcmp(redis->data[index].type, "list") == 0)
+		{
+			snprintf(serverCommand, REDISSPY_MAX_COMMAND_LEN,
+					"LRANGE %s 0 -1", redis->data[index].key);
+		}
+		else if (strcmp(redis->data[index].type, "set") == 0)
+		{
+			snprintf(serverCommand, REDISSPY_MAX_COMMAND_LEN,
+					"SMEMBERS %s", redis->data[index].key);
+		}
+		else if (strcmp(redis->data[index].type, "zset") == 0)
+		{
+			snprintf(serverCommand, REDISSPY_MAX_COMMAND_LEN,
+					"ZRANGE %s 0 -1", redis->data[index].key);
+		}
+
+		r = redisSpyGetServerResponse(redis, serverCommand);
+
+		if (r)
+		{
+			for (unsigned int i = 0; i < MIN(r->elements, dw->displayRows); i++)
+			{
+				mvwaddstr(dw->window, i + REDISSPY_HEADER_ROWS, 0,
+						  r->element[i]->reply);
+			}
+		}
+	}
+	else if (strcmp(redis->data[index].type, "hash") == 0)
+	{
+		snprintf(serverCommand, REDISSPY_MAX_COMMAND_LEN,
+				 "HGETALL %s", redis->data[index].key);
+
+		r = redisSpyGetServerResponse(redis, serverCommand);
+
+		if (r)
+		{
+			char displayRow[REDISSPY_MAX_SCREEN_COLS];
+
+			for (unsigned int i = 0; i < MIN(r->elements/2, dw->displayRows); i++)
+			{
+				snprintf(displayRow, REDISSPY_MAX_SCREEN_COLS,
+					"%s  ->  %s",
+					r->element[2*i]->reply,
+					r->element[2*i+1]->reply);
+
+				mvwaddstr(dw->window, i + REDISSPY_HEADER_ROWS, 0,
+						  displayRow);
+			}
+		}
+	}
+	else
+	{
+		mvwaddstr(dw->window, 1, 0, "Unsupported Type.");
+	}
+
+	if (r)
+		freeReplyObject(r);
+
 	wrefresh(dw->window);
 
 	int done = 0;
@@ -1193,6 +1397,8 @@ static REDIS_DISPATCH g_dispatchTable[] =
 {
 	{ KEY_RESIZE,		redisSpyDraw },
 
+	{ 'h',				redisSpyEventConnectToHost },
+
 	{ 'd',				redisSpyEventDeleteKey },
 
 	{ '[',				redisSpyEventListLeftPop },
@@ -1215,7 +1421,6 @@ static REDIS_DISPATCH g_dispatchTable[] =
 	{ 't',				redisSpyEventSortByType },
 	{ 'l',				redisSpyEventSortByLength },
 	{ 'v',				redisSpyEventSortByValue },
-
 
 	{ 'j',				redisSpyEventMoveDown },
 	{ KEY_DOWN,			redisSpyEventMoveDown },
@@ -1378,15 +1583,17 @@ int main(int argc, char* argv[])
 
 	// Do initial manual refresh
 	// Set Reverse on so it toggles back to ascending
-	g_redis->sortReverse = ~0;
+	g_redis->sortReverse = 0;
 	g_redis->sortBy = sortByKey;
 
-	redisSpySetBusySignal(g_redisSpyWindow, 1);
-	redisSpyServerRefresh(g_redis);
-	redisSpySetBusySignal(g_redisSpyWindow, 0);
+	redisSpyEventRefresh(g_redisSpyWindow, g_redis);
 
-	redisSpySort(g_redis, sortByKey);
-	redisSpyDraw(g_redisSpyWindow, g_redis);
+//	redisSpySetBusySignal(g_redisSpyWindow, 1);
+//	redisSpyServerRefresh(g_redis);
+//	redisSpySetBusySignal(g_redisSpyWindow, 0);
+//
+//	redisSpySort(g_redis, sortByKey);
+//	redisSpyDraw(g_redisSpyWindow, g_redis);
 
 	if (g_redis->refreshInterval)
 	{
@@ -1398,3 +1605,6 @@ int main(int argc, char* argv[])
 
 	return 0;
 }
+
+// eof
+
