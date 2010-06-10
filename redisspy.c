@@ -1179,9 +1179,16 @@ int redisSpyEventListRightPop(REDISSPY_WINDOW* w, REDIS* redis)
 
 int redisSpyEventViewDetails(REDISSPY_WINDOW* w, REDIS* redis)
 {
-	REDISSPY_WINDOW* dw = redisSpyWindowCreate(w);
 
 	int index = redisSpyGetCurrentKeyIndex(w, redis);
+
+	if (index < 0)
+	{
+		beep();
+		return 0;
+	}
+
+	REDISSPY_WINDOW* dw = redisSpyWindowCreate(w);
 
 	char headerText[REDISSPY_MAX_SCREEN_COLS];
 	char statusText[REDISSPY_MAX_SCREEN_COLS];
