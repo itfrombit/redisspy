@@ -1023,6 +1023,12 @@ int redisSpyEventCommand(REDISSPY_WINDOW* window, REDIS* redis)
 				"Command: ", 
 				serverCommand, sizeof(serverCommand)) == 0)
 	{
+		if (serverCommand[0] == '\0')
+		{
+			beep();
+			return 0;
+		}
+
 		redisSpySendCommandToServer(redis, serverCommand, 
 					serverReply, sizeof(serverReply));
 
