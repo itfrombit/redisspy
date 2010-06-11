@@ -478,6 +478,40 @@ int redisSpyEventPageUp(REDISSPY_WINDOW* w, REDIS* redis)
 }
 
 
+int redisSpyEventTop(REDISSPY_WINDOW* w, REDIS* redis)
+{
+	w->startIndex = 0;
+	w->currentRow = 1;
+	w->currentColumn = 0;
+
+	redisSpyDraw(w, redis);
+
+	return 0;
+}
+
+
+int redisSpyEventBottom(REDISSPY_WINDOW* w, REDIS* redis)
+{
+	int i = redis->keyCount - w->displayRows;
+
+	if (i < 0)
+		i = 0;
+
+	w->startIndex = i;
+
+	if (redis->keyCount < w->displayRows)
+		w->currentRow = redis->keyCount;
+	else
+		w->currentRow = w->displayRows;
+
+	w->currentColumn = 0;
+
+	redisSpyDraw(w, redis);
+
+	return 0;
+}
+
+
 int redisSpyEventHelp(REDISSPY_WINDOW* w, REDIS* UNUSED(redis))
 {
 	redisSpySetCommandLineText(w, "r=refresh f,b=page k,t,l,v=sort q=quit");
@@ -1445,6 +1479,10 @@ static REDIS_DISPATCH g_dispatchTable[] =
 	{ ' ',				redisSpyEventPageDown },
 
 	{ CTRL('b'),		redisSpyEventPageUp },
+
+	{ '^',				redisSpyEventTop },
+	{ '$',				redisSpyEventBottom },
+	{ 'G',				redisSpyEventBottom },
 
 	{ '?',				redisSpyEventHelp }
 };
