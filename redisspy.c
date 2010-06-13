@@ -747,23 +747,37 @@ void redisSpySort(REDIS* redis, int newSortBy)
 		}
 	}
 
+	int (*compareFunction)(void* thunk, const void* a, const void* b) = NULL;
+
 	switch (redis->sortBy)
 	{
 		case sortByKey:
-			qsort_r(redis->data, redis->keyCount, sizeof(REDISDATA), redis, compareKeys);
+			compareFunction = compareKeys;
 			break;
 
 		case sortByType:
-			qsort_r(redis->data, redis->keyCount, sizeof(REDISDATA), redis, compareTypes);
+			compareFunction = compareTypes;
 			break;
 
 		case sortByLength:
-			qsort_r(redis->data, redis->keyCount, sizeof(REDISDATA), redis, compareLengths);
+			compareFunction = compareLengths;
 			break;
 
 		case sortByValue:
-			qsort_r(redis->data, redis->keyCount, sizeof(REDISDATA), redis, compareValues);
+			compareFunction = compareValues;
 			break;
+
+		default:
+			break;
+	}
+
+	if (compareFunction != NULL)
+	{
+#if defined(DARWIN) || defined(BSD)
+		qsort_r(redis->data, redis->keyCount, sizeof(REDISDATA), redis, compareFunction);
+#else
+		qsort_r(redis->data, redis->keyCount, sizeof(REDISDATA), compareFunction, redis);
+#endif
 	}
 }
 
