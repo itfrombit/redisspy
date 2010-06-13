@@ -15,7 +15,8 @@
 //   ? : help
 //
 
-#include <sys/syslimits.h>
+#include <sys/param.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <getopt.h>
@@ -38,8 +39,6 @@
 # define UNUSED(x) x 
 #endif
 
-#define MIN(X,Y) ((X) < (Y) ? (X) : (Y))
-#define MAX(X,Y) ((X) > (Y) ? (X) : (Y))
 
 // Declare control characters in their mnemonic form
 //	e.g.: CTRL('f') = 6

@@ -14,7 +14,7 @@ ifeq ($(uname_S),SunOS)
   CCLINK?= -ldl -lnsl -lsocket -lm -lpthread
 else
   CFLAGS?= -std=c99 -pedantic $(OPTIMIZATION) -Wall -W $(ARCH) $(PROF) -I$(HIREDIS_ROOT)
-  CCLINK?= -lm -pthread -lcurses
+  CCLINK?= -lm -pthread -lncurses
 endif
 CCOPT= $(CFLAGS) $(CCLINK) $(ARCH) $(PROF)
 DEBUG?= -g -rdynamic -ggdb 
