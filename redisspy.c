@@ -143,47 +143,69 @@ REDISSPY_WINDOW* g_redisSpyWindow;
 #define safestrcat(d, s) \
 	strncat(d, s, sizeof(d) - strlen(s) - 1);
 
+// qsort_r differs in calling conventions between
+// // Linux and DARWIN/BSD.
+#if defined(DARWIN) || defined(BSD)
 
-int compareKeys(void* thunk, const void* a, const void* b)
+#define DECLARE_COMPARE_FN(fn, thunk, a, b) \
+	int fn(void* thunk, const void* a, const void* b)
+#define CALL_COMPARE_FN(fn, thunk, a, b) \
+	fn(thunk, a, b)
+typedef int (*COMPARE_FN)(void* thunk, const void* a, const void* b);
+
+#else
+
+#define DECLARE_COMPARE_FN(fn, thunk, a, b) \
+	int fn(const void* a, const void* b, void* thunk)
+#define CALL_COMPARE_FN(fn, thunk, a, b) \
+	fn(a, b, thunk)
+typedef int (*COMPARE_FN)(const void* a, const void* b, void* thunk);
+
+#endif
+
+
+DECLARE_COMPARE_FN(compareKeys, thunk, a, b)
 {
 	SWAPIFREVERSESORT(thunk, a, b);
 
 	return strcmp(((REDISDATA*)a)->key, ((REDISDATA*)b)->key);
 }
 
-int compareTypes(void* thunk, const void* a, const void* b)
+DECLARE_COMPARE_FN(compareTypes, thunk, a, b)
 {
 	SWAPIFREVERSESORT(thunk, a, b);
 
 	int r = strcmp(((REDISDATA*)a)->type, ((REDISDATA*)b)->type);
 
 	if (r == 0)
-		return compareKeys(thunk, a, b);
-	
+		return CALL_COMPARE_FN(compareKeys, thunk, a, b);
+
 	return r;
 }
 
-int compareLengths(void* thunk, const void* a, const void* b)
+
+DECLARE_COMPARE_FN(compareLengths, thunk, a, b)
 {
 	SWAPIFREVERSESORT(thunk, a, b);
 
 	int r = ((REDISDATA*)b)->length - ((REDISDATA*)a)->length;
 
 	if (r == 0)
-		return compareKeys(thunk, a, b);
-	
+		return CALL_COMPARE_FN(compareKeys, thunk, a, b);
+
 	return r;
 }
 
-int compareValues(void* thunk, const void* a, const void* b)
+
+DECLARE_COMPARE_FN(compareValues, thunk, a, b)
 {
 	SWAPIFREVERSESORT(thunk, a, b);
 
 	int r = strcmp(((REDISDATA*)a)->value, ((REDISDATA*)b)->value);
 
 	if (r == 0)
-		return compareKeys(thunk, a, b);
-	
+		return CALL_COMPARE_FN(compareKeys, thunk, a, b);
+
 	return r;
 }
 
@@ -747,7 +769,7 @@ void redisSpySort(REDIS* redis, int newSortBy)
 		}
 	}
 
-	int (*compareFunction)(void* thunk, const void* a, const void* b) = NULL;
+	COMPARE_FN compareFunction = NULL;
 
 	switch (redis->sortBy)
 	{
