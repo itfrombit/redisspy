@@ -19,14 +19,20 @@ endif
 CCOPT= $(CFLAGS) $(CCLINK) $(ARCH) $(PROF)
 DEBUG?= -g -rdynamic -ggdb 
 
-SPYOBJ = $(HIREDIS_ROOT)/net.o $(HIREDIS_ROOT)/hiredis.o $(HIREDIS_ROOT)/sds.o redisspy.o
+SPYOBJ = $(HIREDIS_ROOT)/net.o $(HIREDIS_ROOT)/hiredis.o $(HIREDIS_ROOT)/sds.o spymodel.o spywindow.o spycontroller.o main.o
 
 SPYNAME = redisspy
 
 all: redisspy
 
 # Deps (use make dep to generate this)
-redisspy.o: redisspy.c
+spymodel.o: spymodel.c
+
+spywindow.o: spywindow.c
+
+spycontroller.o: spycontroller.c
+
+main.o:	main.c
 
 redisspy: $(SPYOBJ)
 	$(CC) -o $(SPYNAME) $(CCOPT) $(DEBUG) $(SPYOBJ)

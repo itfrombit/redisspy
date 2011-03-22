@@ -1373,6 +1373,7 @@ int redisSpyEventViewDetails(REDISSPY_WINDOW* w, REDIS* redis)
 		switch (c)
 		{
 			case 'q':
+			case 27:
 				redisSpyWindowDeleteChild(dw);
 				done = 1;
 				break;
@@ -1491,7 +1492,7 @@ static REDIS_DISPATCH g_dispatchTable[] =
 	{ ']',				redisSpyEventListRightPop },
 
 	{ 'o',				redisSpyEventViewDetails },
-	{ CTRL('n'),		redisSpyEventViewDetails },
+	{ CTRL('j'),		redisSpyEventViewDetails },
 
 	{ 'q',				redisSpyEventQuit },
 
