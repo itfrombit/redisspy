@@ -19,7 +19,7 @@ endif
 CCOPT= $(CFLAGS) $(CCLINK) $(ARCH) $(PROF)
 DEBUG?= -g -rdynamic -ggdb 
 
-SPYOBJ = $(HIREDIS_ROOT)/net.o $(HIREDIS_ROOT)/hiredis.o $(HIREDIS_ROOT)/sds.o spymodel.o spywindow.o spycontroller.o main.o
+SPYOBJ = $(HIREDIS_ROOT)/net.o $(HIREDIS_ROOT)/hiredis.o $(HIREDIS_ROOT)/sds.o spymodel.o spywindow.o spycontroller.o main.o spydetailcontroller.o
 
 SPYNAME = redisspy
 
@@ -32,13 +32,15 @@ spywindow.o: spywindow.c
 
 spycontroller.o: spycontroller.c
 
+spydetailcontroller.o: spydetailcontroller.c
+
 main.o:	main.c
 
 redisspy: $(SPYOBJ)
-	$(CC) -o $(SPYNAME) $(CCOPT) $(DEBUG) $(SPYOBJ)
+	$(CC) -g -o $(SPYNAME) $(CCOPT) $(DEBUG) $(SPYOBJ)
 
 .c.o:
-	$(CC) -c $(CFLAGS) $(DEBUG) $(COMPILE_TIME) $<
+	$(CC) -g -c $(CFLAGS) $(DEBUG) $(COMPILE_TIME) $<
 
 install:
 	cp $(SPYNAME) /usr/local/bin

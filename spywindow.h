@@ -9,6 +9,8 @@
 #include <ncurses.h>
 #include <signal.h>
 
+#include "spyutils.h"
+
 #define SPY_WINDOW_MAX_COMMAND_LEN	256
 
 // Curses data
@@ -59,6 +61,13 @@ typedef struct _spy_window
 SPY_WINDOW* spyWindowCreate(SPY_WINDOW* parent);
 void spyWindowDelete(SPY_WINDOW* w);
 
+SPY_WINDOW_DELEGATE* spyWindowDelegateCreate(
+	unsigned int (*fpRowCount)(void* self),
+	int (*fpValueForRow)(void* self, int row, char* buffer, unsigned int bufferSize),
+	int (*fpHeaderText)(void* self, char* buffer, unsigned int bufferSize),
+	int (*fpStatusText)(void* self, char* buffer, unsigned int bufferSize, unsigned int cursorIndex));
+void spyWindowDelegateDelete(SPY_WINDOW_DELEGATE* delegate);
+
 void spyWindowSetDelegate(SPY_WINDOW* w, SPY_WINDOW_DELEGATE* delegate);
 
 // Curses functions
@@ -88,5 +97,7 @@ int spyWindowMoveToTop(SPY_WINDOW* w);
 int spyWindowMoveToBottom(SPY_WINDOW* w);
 
 void spyWindowResetCursor(SPY_WINDOW* w);
+void spyWindowRestoreCursor(SPY_WINDOW* w);
+void spyWindowBeep(SPY_WINDOW* w);
 
 

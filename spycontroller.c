@@ -29,6 +29,7 @@
 #include "spywindow.h"
 
 #include "spycontroller.h"
+#include "spydetailcontroller.h"
 
 static SPY_WINDOW* g_redisSpyWindow;
 static REDIS* g_redis;
@@ -85,7 +86,7 @@ void spyControllerResetTimer(REDIS* redis, int interval)
 }
 
 
-int redisSpyGetCommand(SPY_WINDOW* w, REDIS* redis, char* prompt, char* str, int max)
+int spyControllerGetCommand(SPY_WINDOW* w, REDIS* redis, char* prompt, char* str, int max)
 {
 	signal(SIGALRM, SIG_IGN);
 
@@ -120,11 +121,11 @@ int spyControllerEventConnectToHost(SPY_WINDOW* window, REDIS* redis)
 
 	sprintf(hostPrompt, "Host: (Default is %s): ", redis->host);
 
-	if (redisSpyGetCommand(window, redis, 
+	if (spyControllerGetCommand(window, redis, 
 				hostPrompt,
 				hostBuffer, sizeof(hostBuffer)) == 0)
 	{
-		if (redisSpyGetCommand(window, redis,
+		if (spyControllerGetCommand(window, redis,
 				"Port (Default is 6379): ",
 				portBuffer, sizeof(portBuffer)) == 0)
 		{
@@ -154,7 +155,7 @@ int spyControllerEventCommand(SPY_WINDOW* window, REDIS* redis)
 	char serverCommand[REDISSPY_MAX_COMMAND_LEN];
 	char serverReply[REDISSPY_MAX_SERVER_REPLY_LEN];
 
-	if (redisSpyGetCommand(window, redis, 
+	if (spyControllerGetCommand(window, redis, 
 				"Command: ", 
 				serverCommand, sizeof(serverCommand)) == 0)
 	{
@@ -202,7 +203,7 @@ int spyControllerEventBatchFile(SPY_WINDOW* window, REDIS* redis)
 {
 	char filename[PATH_MAX];
 
-	if (redisSpyGetCommand(window, redis,
+	if (spyControllerGetCommand(window, redis,
 				"File: ",
 				filename, sizeof(filename)) == 0)
 	{
@@ -309,7 +310,6 @@ int spyControllerEventListRightPop(SPY_WINDOW* w, REDIS* redis)
 	return spyControllerEventListPop(w, redis, "RPOP");
 }
 
-/* TODO jsb */
 int spyControllerEventViewDetails(SPY_WINDOW* w, REDIS* redis)
 {
 	signal(SIGALRM, SIG_IGN);
@@ -322,121 +322,7 @@ int spyControllerEventViewDetails(SPY_WINDOW* w, REDIS* redis)
 		return 0;
 	}
 
-	SPY_WINDOW* dw = spyWindowCreate(w);
-
-	char headerText[SPY_WINDOW_MAX_SCREEN_COLS];
-	char statusText[SPY_WINDOW_MAX_SCREEN_COLS];
-
-	snprintf(headerText, SPY_WINDOW_MAX_SCREEN_COLS,
-			"Key Details: %s",
-			redis->data[index].key);
-
-	snprintf(statusText, SPY_WINDOW_MAX_SCREEN_COLS,
-			"[type=%s]  [len=%d]",
-			redis->data[index].type,
-			redis->data[index].length);
-
-	spyWindowSetHeaderLineText(dw, headerText);
-	spyWindowSetStatusLineText(dw, statusText);
-
-	redisReply* r = NULL;
-	char serverCommand[SPY_WINDOW_MAX_COMMAND_LEN];
-
-	if (strcmp(redis->data[index].type, "string") == 0)
-	{
-		snprintf(serverCommand, SPY_WINDOW_MAX_COMMAND_LEN,
-				"GET %s", redis->data[index].key);
-
-		r = redisSpyGetServerResponse(redis, serverCommand);
-
-		if (r)
-		{
-			mvwaddstr(dw->window, SPY_WINDOW_HEADER_ROWS, 0,
-					  r->str);
-		}
-	}
-	else if (   (strcmp(redis->data[index].type, "list") == 0)
-			 || (strcmp(redis->data[index].type, "set") == 0)
-			 || (strcmp(redis->data[index].type, "zset") == 0))
-	{
-		if (strcmp(redis->data[index].type, "list") == 0)
-		{
-			snprintf(serverCommand, SPY_WINDOW_MAX_COMMAND_LEN,
-					"LRANGE %s 0 -1", redis->data[index].key);
-		}
-		else if (strcmp(redis->data[index].type, "set") == 0)
-		{
-			snprintf(serverCommand, SPY_WINDOW_MAX_COMMAND_LEN,
-					"SMEMBERS %s", redis->data[index].key);
-		}
-		else if (strcmp(redis->data[index].type, "zset") == 0)
-		{
-			snprintf(serverCommand, SPY_WINDOW_MAX_COMMAND_LEN,
-					"ZRANGE %s 0 -1", redis->data[index].key);
-		}
-
-		r = redisSpyGetServerResponse(redis, serverCommand);
-
-		if (r)
-		{
-			for (unsigned int i = 0; i < MIN(r->elements, dw->displayRows); i++)
-			{
-				mvwaddstr(dw->window, i + SPY_WINDOW_HEADER_ROWS, 0,
-						  r->element[i]->str);
-			}
-		}
-	}
-	else if (strcmp(redis->data[index].type, "hash") == 0)
-	{
-		snprintf(serverCommand, SPY_WINDOW_MAX_COMMAND_LEN,
-				 "HGETALL %s", redis->data[index].key);
-
-		r = redisSpyGetServerResponse(redis, serverCommand);
-
-		if (r)
-		{
-			char displayRow[SPY_WINDOW_MAX_SCREEN_COLS];
-
-			for (unsigned int i = 0; i < MIN(r->elements/2, dw->displayRows); i++)
-			{
-				snprintf(displayRow, SPY_WINDOW_MAX_SCREEN_COLS,
-					"%s  ->  %s",
-					r->element[2*i]->str,
-					r->element[2*i+1]->str);
-
-				mvwaddstr(dw->window, i + SPY_WINDOW_HEADER_ROWS, 0,
-						  displayRow);
-			}
-		}
-	}
-	else
-	{
-		mvwaddstr(dw->window, 1, 0, "Unsupported Type.");
-	}
-
-	if (r)
-		freeReplyObject(r);
-
-	wrefresh(dw->window);
-
-	int done = 0;
-
-	while (!done)
-	{
-		char c = wgetch(w->window);
-
-		switch (c)
-		{
-			case 'q':
-			case 27:
-				spyWindowDeleteChild(dw);
-				done = 1;
-				break;
-
-			default:
-				beep();
-		}
-	}
+	spyDetailControllerRun(w, redis, index);
 
 	spyControllerEventRefresh(w, redis);
 
@@ -450,7 +336,7 @@ int spyControllerEventViewDetails(SPY_WINDOW* w, REDIS* redis)
 int spyControllerEventFilterKeys(SPY_WINDOW* window, REDIS* redis)
 {
 	// Change key filter pattern
-	if (redisSpyGetCommand(window, redis, 
+	if (spyControllerGetCommand(window, redis, 
 				"Pattern: ", 
 				redis->pattern, sizeof(redis->pattern)) == 0)
 	{
@@ -474,7 +360,7 @@ int spyControllerEventAutoRefresh(SPY_WINDOW* window, REDIS* redis)
 	redis->refreshInterval = 0;
 
 	// Auto-refresh
-	if (redisSpyGetCommand(window, redis, 
+	if (spyControllerGetCommand(window, redis, 
 				"Refresh Interval (0 to turn off): ", 
 				refreshIntervalBuffer, 
 				sizeof(refreshIntervalBuffer)) == 0)
@@ -714,11 +600,11 @@ int spyControllerEventLoop(SPY_WINDOW* w, REDIS* redis)
 	g_redisSpyWindow = w;
 	g_redis = redis;
 
-	g_spyWindowDelegate = malloc(sizeof(SPY_WINDOW_DELEGATE));
-	g_spyWindowDelegate->fpRowCount = spyWindowDelegateRowCount;
-	g_spyWindowDelegate->fpValueForRow = spyWindowDelegateValueForRow;
-	g_spyWindowDelegate->fpHeaderText = spyWindowDelegateHeaderText;
-	g_spyWindowDelegate->fpStatusText = spyWindowDelegateStatusText;
+	g_spyWindowDelegate = spyWindowDelegateCreate(
+								spyWindowDelegateRowCount,
+								spyWindowDelegateValueForRow,
+								spyWindowDelegateHeaderText,
+								spyWindowDelegateStatusText);
 
 	spyWindowSetDelegate(w, g_spyWindowDelegate);
 

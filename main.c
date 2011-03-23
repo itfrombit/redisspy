@@ -89,7 +89,7 @@ int redisSpyGetOptions(int argc, char* argv[], REDIS* redis)
 
 int main(int argc, char* argv[])
 {
-	REDIS* redis = malloc(sizeof(REDIS));
+	REDIS* redis = redisSpyCreate();
 
 	redisSpyGetOptions(argc, argv, redis);
 
@@ -97,7 +97,7 @@ int main(int argc, char* argv[])
 
 	spyControllerEventLoop(spyWindow, redis);
 
-	free(redis);
+	redisSpyDelete(redis);
 
 	return 0;
 }

@@ -1,19 +1,5 @@
 #include "hiredis.h"
-
-// UNUSED macro via Martin Pool
-#ifdef UNUSED 
-#elif defined(__GNUC__) 
-# define UNUSED(x) UNUSED_ ## x __attribute__((unused)) 
-#elif defined(__LCLINT__) 
-# define UNUSED(x) /*@unused@*/ x 
-#else 
-# define UNUSED(x) x 
-#endif
-
-
-// Declare control characters in their mnemonic form
-//	e.g.: CTRL('f') = 6
-#define CTRL(char) (char - 'a' + 1)
+#include "spyutils.h"
 
 // Max values for string buffers
 #define REDISSPY_MAX_HOST_LEN			128
@@ -41,7 +27,12 @@ typedef struct
 	char	key[REDISSPY_MAX_KEY_LEN];
 	int		length;
 	char	value[REDISSPY_MAX_VALUE_LEN];
+
+	// For detail items
+	redisReply*	reply;
+
 } REDISDATA;
+
 
 typedef struct
 {
@@ -75,29 +66,6 @@ typedef struct
 		x = tmp; \
 	} 
 
-#define safestrcat(d, s) \
-	strncat(d, s, sizeof(d) - strlen(s) - 1);
-
-// qsort_r differs in calling conventions between
-// // Linux and DARWIN/BSD.
-#if defined(DARWIN) || defined(BSD)
-
-#define DECLARE_COMPARE_FN(fn, thunk, a, b) \
-	int fn(void* thunk, const void* a, const void* b)
-#define CALL_COMPARE_FN(fn, thunk, a, b) \
-	fn(thunk, a, b)
-typedef int (*COMPARE_FN)(void* thunk, const void* a, const void* b);
-
-#else
-
-#define DECLARE_COMPARE_FN(fn, thunk, a, b) \
-	int fn(const void* a, const void* b, void* thunk)
-#define CALL_COMPARE_FN(fn, thunk, a, b) \
-	fn(a, b, thunk)
-typedef int (*COMPARE_FN)(const void* a, const void* b, void* thunk);
-
-#endif
-
 
 DECLARE_COMPARE_FN(compareKeys, thunk, a, b);
 DECLARE_COMPARE_FN(compareTypes, thunk, a, b);
@@ -106,16 +74,25 @@ DECLARE_COMPARE_FN(compareValues, thunk, a, b);
 
 // Redis functions
 
+REDIS* redisSpyCreate();
+void redisSpyDelete(REDIS* r);
+
 int redisSpyConnect(REDIS* r, char* host, unsigned int port);
 int redisSpyServerClearCache(REDIS* redis);
 int redisSpyServerRefresh(REDIS* redis);
 void redisSpySort(REDIS* redis, int newSortBy);
+int redisSpyServerRefreshKey(REDIS* redis, REDISDATA* data);
 
 redisReply* redisSpyGetServerResponse(REDIS* redis, char* command);
 int redisSpySendCommandToServer(REDIS* redis, char* command, char* reply, int maxReplyLen);
 
 void redisSpyDump(REDIS* redis, char* delimiter, int unaligned);
 
+unsigned int redisSpyKeyCount(REDIS* redis);
+unsigned int redisSpyLongestKeyLength(REDIS* redis);
+char* redisSpyKeyAtIndex(REDIS* redis, unsigned int index);
 
-int redisSpyGetOptions(int argc, char* argv[], REDIS* redis);
+int redisSpyDetailElementCount(REDISDATA* data);
+int redisSpyDetailElementAtIndex(REDISDATA* data, unsigned int index, char* buffer, unsigned int size);
+
 

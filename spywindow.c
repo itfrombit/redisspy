@@ -1,5 +1,26 @@
 #include "spywindow.h"
 
+SPY_WINDOW_DELEGATE* spyWindowDelegateCreate(
+	unsigned int (*fpRowCount)(void* self),
+	int (*fpValueForRow)(void* self, int row, char* buffer, unsigned int bufferSize),
+	int (*fpHeaderText)(void* self, char* buffer, unsigned int bufferSize),
+	int (*fpStatusText)(void* self, char* buffer, unsigned int bufferSize, unsigned int cursorIndex))
+{
+	SPY_WINDOW_DELEGATE* d = malloc(sizeof(SPY_WINDOW_DELEGATE));
+
+	d->fpRowCount = fpRowCount;
+	d->fpValueForRow = fpValueForRow;
+	d->fpHeaderText = fpHeaderText;
+	d->fpStatusText = fpStatusText;
+
+	return d;
+}
+
+void spyWindowDelegateDelete(SPY_WINDOW_DELEGATE* delegate)
+{
+	free(delegate);
+}
+
 
 void spyWindowSetDelegate(SPY_WINDOW* w, SPY_WINDOW_DELEGATE* delegate)
 {
@@ -143,8 +164,12 @@ SPY_WINDOW* spyWindowCreate(SPY_WINDOW* parent)
 	w->statusRow = w->rows - 2;
 	w->commandRow = w->rows - 1;
 
+	w->startIndex = 0;
+
 	w->currentRow = SPY_WINDOW_HEADER_ROWS;
 	w->currentColumn = 0;
+
+	w->lastCommand[0] = '\0';
 
 	clear();
 	wrefresh(w->window);
@@ -317,6 +342,15 @@ void spyWindowResetCursor(SPY_WINDOW* w)
 	w->currentColumn = 0;
 }
 
+void spyWindowRestoreCursor(SPY_WINDOW* w)
+{
+	wmove(w->window, w->currentRow, w->currentColumn);
+}
+
+void spyWindowBeep(SPY_WINDOW* UNUSED(w))
+{
+	beep();
+}
 
 int spyWindowGetLastCommand(SPY_WINDOW* w, char* command, int commandLength)
 {
