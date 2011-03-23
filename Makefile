@@ -26,17 +26,6 @@ SPYNAME = redisspy
 
 all: redisspy
 
-# Deps (use make dep to generate this)
-spymodel.o: spymodel.c
-
-spywindow.o: spywindow.c
-
-spycontroller.o: spycontroller.c
-
-spydetailcontroller.o: spydetailcontroller.c
-
-main.o:	main.c
-
 redisspy: $(HIREDIS_OBJ) $(SPY_OBJ)
 	$(CC) -g -o $(SPYNAME) $(CCOPT) $(DEBUG) $(HIREDIS_OBJ) $(SPY_OBJ)
 

@@ -410,7 +410,6 @@ DECLARE_COMPARE_FN(compareKeys, thunk, a, b)
 	return strcmp(((REDISDATA*)a)->key, ((REDISDATA*)b)->key);
 }
 
-
 DECLARE_COMPARE_FN(compareTypes, thunk, a, b)
 {
 	SWAPIFREVERSESORT(thunk, a, b);
@@ -423,7 +422,6 @@ DECLARE_COMPARE_FN(compareTypes, thunk, a, b)
 	return r;
 }
 
-
 DECLARE_COMPARE_FN(compareLengths, thunk, a, b)
 {
 	SWAPIFREVERSESORT(thunk, a, b);
@@ -435,7 +433,6 @@ DECLARE_COMPARE_FN(compareLengths, thunk, a, b)
 
 	return r;
 }
-
 
 DECLARE_COMPARE_FN(compareValues, thunk, a, b)
 {
