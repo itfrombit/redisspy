@@ -19,7 +19,8 @@ endif
 CCOPT= $(CFLAGS) $(CCLINK) $(ARCH) $(PROF)
 DEBUG?= -g -rdynamic -ggdb 
 
-SPYOBJ = $(HIREDIS_ROOT)/net.o $(HIREDIS_ROOT)/hiredis.o $(HIREDIS_ROOT)/sds.o spymodel.o spywindow.o spycontroller.o main.o spydetailcontroller.o
+HIREDIS_OBJ = $(HIREDIS_ROOT)/net.o $(HIREDIS_ROOT)/hiredis.o $(HIREDIS_ROOT)/sds.o
+SPY_OBJ = spymodel.o spywindow.o spycontroller.o main.o spydetailcontroller.o
 
 SPYNAME = redisspy
 
@@ -36,8 +37,8 @@ spydetailcontroller.o: spydetailcontroller.c
 
 main.o:	main.c
 
-redisspy: $(SPYOBJ)
-	$(CC) -g -o $(SPYNAME) $(CCOPT) $(DEBUG) $(SPYOBJ)
+redisspy: $(HIREDIS_OBJ) $(SPY_OBJ)
+	$(CC) -g -o $(SPYNAME) $(CCOPT) $(DEBUG) $(HIREDIS_OBJ) $(SPY_OBJ)
 
 .c.o:
 	$(CC) -g -c $(CFLAGS) $(DEBUG) $(COMPILE_TIME) $<
