@@ -43,7 +43,7 @@ void spyWindowSetBusySignal(SPY_WINDOW* w, int isBusy)
 }
 
 
-void spyWindowSetRowText(SPY_WINDOW* w, int row, int attr, char* text)
+void spyWindowSetRowText(SPY_WINDOW* w, int row, int attr, const char* text)
 {
 	if (attr)
 		wattron(w->window, attr);
@@ -69,20 +69,20 @@ int spyWindowGetCurrentRow(SPY_WINDOW* w)
 	return w->startIndex + w->currentRow - SPY_WINDOW_HEADER_ROWS;
 }
 
-void spyWindowSetHeaderLineText(SPY_WINDOW* w, char* text)
+void spyWindowSetHeaderLineText(SPY_WINDOW* w, const char* text)
 {
 	spyWindowSetRowText(w, w->headerRow, A_STANDOUT, text);
 }
 
 
-void spyWindowSetCommandLineText(SPY_WINDOW* w, char* text)
+void spyWindowSetCommandLineText(SPY_WINDOW* w, const char* text)
 {
 	spyWindowSetRowText(w, w->commandRow, 0, text);
 	wmove(w->window, w->currentRow, w->currentColumn);
 }
 
 
-void spyWindowSetStatusLineText(SPY_WINDOW* w, char* text)
+void spyWindowSetStatusLineText(SPY_WINDOW* w, const char* text)
 {
 	spyWindowSetRowText(w, w->statusRow, A_STANDOUT, text);
 }
@@ -359,7 +359,7 @@ int spyWindowGetLastCommand(SPY_WINDOW* w, char* command, int commandLength)
 }
 
 
-int spyWindowGetCommand(SPY_WINDOW* w, char* prompt, char* str, int max)
+int spyWindowGetCommand(SPY_WINDOW* w, const char* prompt, char* str, int max)
 {
 	char	command[SPY_WINDOW_MAX_COMMAND_LEN];
 

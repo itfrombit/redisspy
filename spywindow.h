@@ -72,14 +72,14 @@ void spyWindowSetDelegate(SPY_WINDOW* w, SPY_WINDOW_DELEGATE* delegate);
 
 // Curses functions
 void spyWindowSetBusySignal(SPY_WINDOW* w, int isBusy);
-void spyWindowSetRowText(SPY_WINDOW* w, int row, int attr, char* text);
+void spyWindowSetRowText(SPY_WINDOW* w, int row, int attr, const char* text);
 int spyWindowGetCurrentRow(SPY_WINDOW* w);
 
-void spyWindowSetHeaderLineText(SPY_WINDOW* w, char* text);
-void spyWindowSetCommandLineText(SPY_WINDOW* w, char* text);
-void spyWindowSetStatusLineText(SPY_WINDOW* w, char* text);
+void spyWindowSetHeaderLineText(SPY_WINDOW* w, const char* text);
+void spyWindowSetCommandLineText(SPY_WINDOW* w, const char* text);
+void spyWindowSetStatusLineText(SPY_WINDOW* w, const char* text);
 
-int spyWindowGetCommand(SPY_WINDOW* w, char* prompt, char* command, int max);
+int spyWindowGetCommand(SPY_WINDOW* w, const char* prompt, char* command, int max);
 int spyWindowGetLastCommand(SPY_WINDOW* w, char* command, int max);
 
 int spyWindowDraw(SPY_WINDOW* w);

@@ -86,7 +86,7 @@ void spyControllerResetTimer(REDIS* redis, int interval)
 }
 
 
-int spyControllerGetCommand(SPY_WINDOW* w, REDIS* redis, char* prompt, char* str, int max)
+int spyControllerGetCommand(SPY_WINDOW* w, REDIS* redis, const char* prompt, char* str, int max)
 {
 	signal(SIGALRM, SIG_IGN);
 
@@ -265,7 +265,7 @@ int spyControllerEventDeleteKey(SPY_WINDOW* w, REDIS* redis)
 }
 
 
-int spyControllerEventListPop(SPY_WINDOW* w, REDIS* redis, char* command)
+int spyControllerEventListPop(SPY_WINDOW* w, REDIS* redis, const char* command)
 {
 	char serverCommand[REDISSPY_MAX_COMMAND_LEN];
 	char serverReply[REDISSPY_MAX_SERVER_REPLY_LEN];
