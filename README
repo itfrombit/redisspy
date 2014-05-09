@@ -2,8 +2,6 @@ INTRODUCTION
 
 Spy on a redis database.
 
-<A better description is in the works...>
-
 
 WARNING 
 
@@ -67,14 +65,14 @@ redisspy requires the hiredis source found at
 redisspy also requires the curses library.  If you have ncurses, change the
 Makefile from -lcurses to -lncurses.
 
-redisspy was written and tested on Mac OS X 10.6.3, but should work in 
+redisspy was written and tested on Mac OS X 10.9.2, but should work in 
 other Unix-like environments.
 
 
 INSTALLATION
 
 By default, the Makefile expects to find the hiredis source in the
-../hiredis directory.  This can be changed by updating the HIREDIS_ROOT
+../3rd/hiredis directory.  This can be changed by updating the HIREDIS_ROOT
 variable in the Makefile.
 
 Build redisspy by typing "make".
