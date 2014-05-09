@@ -174,12 +174,44 @@ int spyHelpControllerDispatchCommand(int command, SPY_WINDOW* w)
 //
 unsigned int spyHelpWindowDelegateRowCount(void* UNUSED(delegate))
 {
-	return 0;
+	return g_redisDispatchCount;
 }
 
-int spyHelpWindowDelegateValueForRow(void* UNUSED(delegate), int UNUSED(row), char* buffer, unsigned int UNUSED(bufferSize))
+int spyHelpWindowDelegateValueForRow(void* UNUSED(delegate), int row, char* buffer, unsigned int bufferSize)
 {
-	strcpy(buffer, "");
+	char keybinding[16];
+	int key = g_redisDispatchTable[row].key;
+
+	if (key == KEY_SEPARATOR)
+	{
+		strcpy(buffer, "");
+		return 0;
+	}
+
+	if (key <= CTRL('z'))
+	{
+		snprintf(keybinding, sizeof(keybinding), "^%c",
+				 'a' + key - 1);
+	}
+	else if (key == KEY_RESIZE)
+	{
+		strcpy(keybinding, "<resize>");
+	}
+	else if (key == KEY_DOWN)
+	{
+		strcpy(keybinding, "<down>");
+	}
+	else if (key == KEY_UP)
+	{
+		strcpy(keybinding, "<up>");
+	}
+	else
+	{
+		snprintf(keybinding, sizeof(keybinding), "%c", key);
+	}
+
+	snprintf(buffer, bufferSize, "%8s  -  %s",
+	         keybinding, g_redisDispatchTable[row].desc);
 
 	return 0;
 }
@@ -206,6 +238,8 @@ int spyHelpWindowDelegateStatusText(void* UNUSED(delegate), char* buffer, unsign
 //
 int spyHelpControllerEventLoop(SPY_WINDOW* w)
 {
+	spyWindowDraw(w);
+
 	while (1)
 	{
 		int key = wgetch(w->window);

@@ -6,6 +6,8 @@ typedef struct
 } REDIS_DISPATCH;
 #endif
 
+#define KEY_SEPARATOR	-1
+
 typedef struct 
 {
 	int			key;

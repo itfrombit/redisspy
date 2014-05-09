@@ -457,47 +457,61 @@ int spyControllerEventHelp(SPY_WINDOW* w, REDIS* UNUSED(redis));
 static SPY_DISPATCH g_dispatchTable[] = 
 {
 	{ KEY_RESIZE,		"resize",                        spyControllerRedraw },
-
+	{ KEY_SEPARATOR,	"",								 NULL },
 	{ 'h',				"connect to host",               spyControllerEventConnectToHost },
+	{ KEY_SEPARATOR,	"",								 NULL },
 
 	{ 'd',				"DEL - delete current key",      spyControllerEventDeleteKey },
+	{ KEY_SEPARATOR,	"",								 NULL },
 
 	{ '[',				"LPOP - left pop current list",  spyControllerEventListLeftPop },
 	{ ']',				"RPOP - right pop current list", spyControllerEventListRightPop },
+	{ KEY_SEPARATOR,	"",								 NULL },
 
 	{ 'o',				"view details",                  spyControllerEventViewDetails },
 	{ CTRL('j'),		"view details",                  spyControllerEventViewDetails },
+	{ KEY_SEPARATOR,	"",								 NULL },
 
 	{ 'q',				"quit",                          spyControllerEventQuit },
+	{ KEY_SEPARATOR,	"",								 NULL },
 
 	{ 'r',				"refresh",                       spyControllerEventRefresh },
 	{ 'a',				"auto-refresh",                  spyControllerEventAutoRefresh },
+	{ KEY_SEPARATOR,	"",								 NULL },
 
 	{ ':',				"command line",                  spyControllerEventCommand },
 	{ '.',				"repeat last command",           spyControllerEventRepeatCommand },
 	{ 'b',				"run batch file",                spyControllerEventBatchFile },
+	{ KEY_SEPARATOR,	"",								 NULL },
 
 	{ 'f',				"filter keys",                   spyControllerEventFilterKeys },
+	{ KEY_SEPARATOR,	"",								 NULL },
 
 	{ 's',				"sort by key",                   spyControllerEventSortByKey },
 	{ 't',				"sort by type",                  spyControllerEventSortByType },
 	{ 'l',				"sort by length",                spyControllerEventSortByLength },
 	{ 'v',				"sort by value",                 spyControllerEventSortByValue },
+	{ KEY_SEPARATOR,	"",								 NULL },
 
 	{ 'j',				"move down",                     spyControllerEventMoveDown },
 	{ KEY_DOWN,			"move down",                     spyControllerEventMoveDown },
+	{ KEY_SEPARATOR,	"",								 NULL },
 
 	{ 'k',				"move up",                       spyControllerEventMoveUp },
 	{ KEY_UP,			"move up",                       spyControllerEventMoveUp },
+	{ KEY_SEPARATOR,	"",								 NULL },
 
 	{ CTRL('f'),		"page down",                     spyControllerEventPageDown },
 	{ ' ',				"page down",                     spyControllerEventPageDown },
+	{ KEY_SEPARATOR,	"",								 NULL },
 
 	{ CTRL('b'),		"page up",                       spyControllerEventPageUp },
+	{ KEY_SEPARATOR,	"",								 NULL },
 
 	{ '^',				"goto top",                      spyControllerEventMoveToTop },
 	{ '$',				"goto bottom",                   spyControllerEventMoveToBottom },
 	{ 'G',				"goto bottom",                   spyControllerEventMoveToBottom },
+	{ KEY_SEPARATOR,	"",								 NULL },
 
 	{ '?',				"help",                          spyControllerEventHelp }
 };
@@ -510,7 +524,16 @@ int redisSpyDispatchCommand(int command, SPY_WINDOW* w, REDIS* r)
 	for (unsigned int i = 0; i < g_dispatchTableSize; i++)
 	{
 		if (g_dispatchTable[i].key == command)
-			return (*(g_dispatchTable[i].handler))(w, r);
+		{
+			if (g_dispatchTable[i].handler)
+			{
+				return (*(g_dispatchTable[i].handler))(w, r);
+			}
+			else
+			{
+				return 0;
+			}
+		}
 	}
 
 	return -1;
