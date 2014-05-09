@@ -1,10 +1,17 @@
-
+#if 0
 typedef struct 
 {
 	int		key;
 	int		(*handler)(SPY_WINDOW* w, REDIS* redis);
 } REDIS_DISPATCH;
+#endif
 
+typedef struct 
+{
+	int			key;
+	const char*	desc;
+	int	(*handler)(SPY_WINDOW* w, REDIS* redis);
+} SPY_DISPATCH;
 
 typedef struct _spy_controller
 {

@@ -30,20 +30,13 @@
 
 #include "spycontroller.h"
 #include "spydetailcontroller.h"
+#include "spyhelpcontroller.h"
 
 static SPY_WINDOW* g_redisSpyWindow;
 static REDIS* g_redis;
 static SPY_WINDOW_DELEGATE* g_spyWindowDelegate;
 
 static int REDIS_SPY_DISPATCH_COMMAND_QUIT = -999999;
-
-int spyControllerEventHelp(SPY_WINDOW* w, REDIS* UNUSED(redis))
-{
-	spyWindowSetCommandLineText(w, "r=refresh f,b=page k,t,l,v=sort q=quit");
-
-	return 0;
-}
-
 
 // Driver
 
@@ -458,62 +451,58 @@ int spyControllerEventMoveToBottom(SPY_WINDOW* window, REDIS* UNUSED(redis))
 	return 0;
 }
 
-typedef struct 
-{
-	int		key;
-	int		(*handler)(SPY_WINDOW* w, REDIS* redis);
-} SPY_DISPATCH;
+
+int spyControllerEventHelp(SPY_WINDOW* w, REDIS* UNUSED(redis));
 
 static SPY_DISPATCH g_dispatchTable[] = 
 {
-	{ KEY_RESIZE,		spyControllerRedraw },
+	{ KEY_RESIZE,		"resize",                        spyControllerRedraw },
 
-	{ 'h',				spyControllerEventConnectToHost },
+	{ 'h',				"connect to host",               spyControllerEventConnectToHost },
 
-	{ 'd',				spyControllerEventDeleteKey },
+	{ 'd',				"DEL - delete current key",      spyControllerEventDeleteKey },
 
-	{ '[',				spyControllerEventListLeftPop },
-	{ ']',				spyControllerEventListRightPop },
+	{ '[',				"LPOP - left pop current list",  spyControllerEventListLeftPop },
+	{ ']',				"RPOP - right pop current list", spyControllerEventListRightPop },
 
-	{ 'o',				spyControllerEventViewDetails },
-	{ CTRL('j'),		spyControllerEventViewDetails },
+	{ 'o',				"view details",                  spyControllerEventViewDetails },
+	{ CTRL('j'),		"view details",                  spyControllerEventViewDetails },
 
-	{ 'q',				spyControllerEventQuit },
+	{ 'q',				"quit",                          spyControllerEventQuit },
 
-	{ 'r',				spyControllerEventRefresh },
-	{ 'a',				spyControllerEventAutoRefresh },
+	{ 'r',				"refresh",                       spyControllerEventRefresh },
+	{ 'a',				"auto-refresh",                  spyControllerEventAutoRefresh },
 
-	{ ':',				spyControllerEventCommand },
-	{ '.',				spyControllerEventRepeatCommand },
-	{ 'b',				spyControllerEventBatchFile },
+	{ ':',				"command line",                  spyControllerEventCommand },
+	{ '.',				"repeat last command",           spyControllerEventRepeatCommand },
+	{ 'b',				"run batch file",                spyControllerEventBatchFile },
 
-	{ 'f',				spyControllerEventFilterKeys },
+	{ 'f',				"filter keys",                   spyControllerEventFilterKeys },
 
-	{ 's',				spyControllerEventSortByKey },
-	{ 't',				spyControllerEventSortByType },
-	{ 'l',				spyControllerEventSortByLength },
-	{ 'v',				spyControllerEventSortByValue },
+	{ 's',				"sort by key",                   spyControllerEventSortByKey },
+	{ 't',				"sort by type",                  spyControllerEventSortByType },
+	{ 'l',				"sort by length",                spyControllerEventSortByLength },
+	{ 'v',				"sort by value",                 spyControllerEventSortByValue },
 
-	{ 'j',				spyControllerEventMoveDown },
-	{ KEY_DOWN,			spyControllerEventMoveDown },
+	{ 'j',				"move down",                     spyControllerEventMoveDown },
+	{ KEY_DOWN,			"move down",                     spyControllerEventMoveDown },
 
-	{ 'k',				spyControllerEventMoveUp },
-	{ KEY_UP,			spyControllerEventMoveUp },
+	{ 'k',				"move up",                       spyControllerEventMoveUp },
+	{ KEY_UP,			"move up",                       spyControllerEventMoveUp },
 
-	{ CTRL('f'),		spyControllerEventPageDown },
-	{ ' ',				spyControllerEventPageDown },
+	{ CTRL('f'),		"page down",                     spyControllerEventPageDown },
+	{ ' ',				"page down",                     spyControllerEventPageDown },
 
-	{ CTRL('b'),		spyControllerEventPageUp },
+	{ CTRL('b'),		"page up",                       spyControllerEventPageUp },
 
-	{ '^',				spyControllerEventMoveToTop },
-	{ '$',				spyControllerEventMoveToBottom },
-	{ 'G',				spyControllerEventMoveToBottom },
+	{ '^',				"goto top",                      spyControllerEventMoveToTop },
+	{ '$',				"goto bottom",                   spyControllerEventMoveToBottom },
+	{ 'G',				"goto bottom",                   spyControllerEventMoveToBottom },
 
-	{ '?',				spyControllerEventHelp }
+	{ '?',				"help",                          spyControllerEventHelp }
 };
 
 static unsigned int g_dispatchTableSize = sizeof(g_dispatchTable)/sizeof(SPY_DISPATCH);
-
 
 int redisSpyDispatchCommand(int command, SPY_WINDOW* w, REDIS* r)
 {
@@ -641,4 +630,22 @@ int spyControllerEventLoop(SPY_WINDOW* w, REDIS* redis)
 
 	return 0;
 }
+
+
+int spyControllerEventHelp(SPY_WINDOW* w, REDIS* redis)
+{
+	spyWindowSetCommandLineText(w, "q=quit");
+
+	signal(SIGALRM, SIG_IGN);
+
+	spyHelpControllerRun(w, g_dispatchTable, g_dispatchTableSize);
+
+	spyControllerEventRefresh(w, redis);
+
+	if (redis->refreshInterval)
+		signal(SIGALRM, timerExpired);
+
+	return 0;
+}
+
 

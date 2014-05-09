@@ -22,7 +22,7 @@ CCOPT= $(CFLAGS) $(CCLINK) $(ARCH) $(PROF)
 DEBUG?= -g -ggdb 
 
 HIREDIS_OBJ = $(HIREDIS_ROOT)/net.o $(HIREDIS_ROOT)/hiredis.o $(HIREDIS_ROOT)/sds.o
-SPY_OBJ = spymodel.o spywindow.o spycontroller.o main.o spydetailcontroller.o
+SPY_OBJ = spymodel.o spywindow.o spycontroller.o main.o spydetailcontroller.o spyhelpcontroller.o
 
 SPYNAME = redisspy
 

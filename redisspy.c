@@ -540,7 +540,60 @@ int redisSpyEventBottom(REDISSPY_WINDOW* w, REDIS* redis)
 
 int redisSpyEventHelp(REDISSPY_WINDOW* w, REDIS* UNUSED(redis))
 {
-	redisSpySetCommandLineText(w, "r=refresh f,b=page k,t,l,v=sort q=quit");
+	//redisSpySetCommandLineText(w, "r=refresh f,b=page k,t,l,v=sort q=quit");
+
+	redisSpySetCommandLineText(w, "q=quit");
+
+	REDISSPY_WINDOW* dw = redisSpyWindowCreate(w);
+
+	char headerText[REDISSPY_MAX_SCREEN_COLS];
+	char statusText[REDISSPY_MAX_SCREEN_COLS];
+
+	snprintf(headerText, REDISSPY_MAX_SCREEN_COLS,
+			"RedisSpy Help");
+
+	snprintf(statusText, REDISSPY_MAX_SCREEN_COLS,
+			"Press q to return");
+
+	redisSpySetHeaderLineText(dw, headerText);
+	redisSpySetStatusLineText(dw, statusText);
+
+
+	char displayRow[REDISSPY_MAX_SCREEN_COLS];
+
+	for (unsigned int i = 0; i < MIN(r->elements/2, dw->displayRows); i++)
+	{
+		snprintf(displayRow, REDISSPY_MAX_SCREEN_COLS,
+			"%s  ->  %s",
+			r->element[2*i]->str,
+			r->element[2*i+1]->str);
+
+		mvwaddstr(dw->window, i + REDISSPY_HEADER_ROWS, 0,
+				  displayRow);
+	}
+
+	wrefresh(dw->window);
+
+	int done = 0;
+
+	while (!done)
+	{
+		char c = wgetch(w->window);
+
+		switch (c)
+		{
+			case 'q':
+			case 27:
+				redisSpyWindowDeleteChild(dw);
+				done = 1;
+				break;
+
+			default:
+				beep();
+		}
+	}
+
+	redisSpyEventRefresh(w, redis);
 
 	return 0;
 }
@@ -1476,56 +1529,57 @@ int redisSpyEventSortByValue(REDISSPY_WINDOW* window, REDIS* redis)
 
 typedef struct 
 {
-	int		key;
-	int		(*handler)(REDISSPY_WINDOW* w, REDIS* redis);
+	int			key;
+	const char*	desc;
+	int	(*handler)(REDISSPY_WINDOW* w, REDIS* redis);
 } REDIS_DISPATCH;
 
 static REDIS_DISPATCH g_dispatchTable[] = 
 {
-	{ KEY_RESIZE,		redisSpyDraw },
+	{ KEY_RESIZE,		"resize", redisSpyDraw },
 
-	{ 'h',				redisSpyEventConnectToHost },
+	{ 'h',				"connect to host", redisSpyEventConnectToHost },
 
-	{ 'd',				redisSpyEventDeleteKey },
+	{ 'd',				"DEL - delete current key", redisSpyEventDeleteKey },
 
-	{ '[',				redisSpyEventListLeftPop },
-	{ ']',				redisSpyEventListRightPop },
+	{ '[',				"LPOP - left pop current list",  redisSpyEventListLeftPop },
+	{ ']',				"RPOP - right pop current list", redisSpyEventListRightPop },
 
-	{ 'o',				redisSpyEventViewDetails },
-	{ CTRL('j'),		redisSpyEventViewDetails },
+	{ 'o',				"view details", redisSpyEventViewDetails },
+	{ CTRL('j'),		"view details", redisSpyEventViewDetails },
 
-	{ 'q',				redisSpyEventQuit },
+	{ 'q',				"quit", redisSpyEventQuit },
 
-	{ 'r',				redisSpyEventRefresh },
-	{ 'a',				redisSpyEventAutoRefresh },
+	{ 'r',				"refresh", redisSpyEventRefresh },
+	{ 'a',				"auto-refresh", redisSpyEventAutoRefresh },
 
-	{ ':',				redisSpyEventCommand },
-	{ '.',				redisSpyEventRepeatCommand },
-	{ 'b',				redisSpyEventBatchFile },
+	{ ':',				"command line",        redisSpyEventCommand },
+	{ '.',				"repeat last command", redisSpyEventRepeatCommand },
+	{ 'b',				"run batch file",      redisSpyEventBatchFile },
 
-	{ 'f',				redisSpyEventFilterKeys },
+	{ 'f',				"filter keys",         redisSpyEventFilterKeys },
 
-	{ 's',				redisSpyEventSortByKey },
-	{ 't',				redisSpyEventSortByType },
-	{ 'l',				redisSpyEventSortByLength },
-	{ 'v',				redisSpyEventSortByValue },
+	{ 's',				"sort by key",         redisSpyEventSortByKey },
+	{ 't',				"sort by type",        redisSpyEventSortByType },
+	{ 'l',				"sort by length",      redisSpyEventSortByLength },
+	{ 'v',				"sort by value",       redisSpyEventSortByValue },
 
-	{ 'j',				redisSpyEventMoveDown },
-	{ KEY_DOWN,			redisSpyEventMoveDown },
+	{ 'j',				"move down",           redisSpyEventMoveDown },
+	{ KEY_DOWN,			"move down",           redisSpyEventMoveDown },
 
-	{ 'k',				redisSpyEventMoveUp },
-	{ KEY_UP,			redisSpyEventMoveUp },
+	{ 'k',				"move up",             redisSpyEventMoveUp },
+	{ KEY_UP,			"move up",             redisSpyEventMoveUp },
 
-	{ CTRL('f'),		redisSpyEventPageDown },
-	{ ' ',				redisSpyEventPageDown },
+	{ CTRL('f'),		"page down",           redisSpyEventPageDown },
+	{ ' ',				"page down",           redisSpyEventPageDown },
 
-	{ CTRL('b'),		redisSpyEventPageUp },
+	{ CTRL('b'),		"page up",             redisSpyEventPageUp },
 
-	{ '^',				redisSpyEventTop },
-	{ '$',				redisSpyEventBottom },
-	{ 'G',				redisSpyEventBottom },
+	{ '^',				"goto top",            redisSpyEventTop },
+	{ '$',				"goto bottom",         redisSpyEventBottom },
+	{ 'G',				"goto bottom",         redisSpyEventBottom },
 
-	{ '?',				redisSpyEventHelp }
+	{ '?',				"help",                redisSpyEventHelp }
 };
 
 static unsigned int g_dispatchTableSize = sizeof(g_dispatchTable)/sizeof(REDIS_DISPATCH);
